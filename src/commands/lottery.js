@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { formatMoney } from '../items.js';
 import { claimGame } from '../games.js';
+import { matchAnswer, optionsLine } from '../answers.js';
 
 // Simple, friendly nouns; each round shows CHOICES of them. The odds only
 // depend on CHOICES (1 in 4), never on how long this list is.
@@ -45,12 +46,12 @@ export default {
     if (!release) return;
     try {
       const { shown, answer } = draw();
-      const edit = await replyEditable(
-        `🎟️ **${user.name}**, pick the winning word within 10 seconds:\n${shown.map((w) => `**${w}**`).join(' · ')}`);
-      const guess = await awaitAnswer((text) => shown.includes(text.toLowerCase()), TIME);
+      const edit = await replyEditable(`Pick the winning word! (waiting for your answer)\n${optionsLine(shown)}`);
+      const said = await awaitAnswer((text) => matchAnswer(text, shown) !== null, TIME);
+      const guess = said && matchAnswer(said, shown);
 
       const streak = db.lotteryStreak(server.key, user.id);
-      if (guess?.toLowerCase() === answer) {
+      if (guess === answer) {
         const cents = pays(streak);
         db.lotteryWin(server.key, user.id, streak + 1, cents);
         cooldowns.setRemaining(server.key, cmd, user.id, WIN_COOLDOWN);
@@ -61,7 +62,7 @@ export default {
       db.lotteryLoss(server.key, user.id);
       const lost = streak > 1 ? ` Your ${streak}-win streak is over.` : '';
       return edit(guess
-        ? `🎟️ Sorry **${user.name}**, the word was **${answer}** (you picked **${guess.toLowerCase()}**).${lost}`
+        ? `🎟️ Sorry **${user.name}**, the word was **${answer}** (you picked **${guess}**).${lost}`
         : `⌛ Timed out, the word was **${answer}**.${lost}`);
     } finally {
       release();
