@@ -1,9 +1,10 @@
 // Turns a chat message into a command run. In order:
 //   1. unknown commands, and admin commands from non-admins, are ignored silently
-//   2. ?remote: an admin's commands use another server's data (replies stay here)
-//   3. economy commands refuse guests once, then ignore them for 12 hours
-//   4. cooldowns (admins skip them)
-//   5. the command runs; anything that goes wrong is logged to the console only
+//   2. once a server has bot channels, non-admins are ignored everywhere else
+//   3. ?remote: an admin's commands use another server's data (replies stay here)
+//   4. economy commands refuse guests once, then ignore them for 12 hours
+//   5. cooldowns (admins skip them)
+//   6. the command runs; anything that goes wrong is logged to the console only
 import { formatWait } from './duration.js';
 
 const GUEST_BLOCK = 12 * 3_600_000;
@@ -28,6 +29,8 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
     const userId = message.user_id;
     const isAdmin = home.admins.has(userId);
     if (cmd.admin && !isAdmin) return;
+    const channel = home.client.channel(channelCode);
+    if (!isAdmin && !inBotChannel(home, channel)) return;
 
     const server = (isAdmin && cmd.name !== 'remote' && remotes.get(remoteKey(home, userId))) || home;
     const remote = server !== home;
@@ -40,7 +43,7 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
         if (wait) return await out.reply(cmd.cooldownText?.(formatWait(wait)) ?? `⏳ Slow down! Try \`${prefix}${cmd.name}\` again in ${formatWait(wait)}.`);
       }
       await cmd.run({
-        prefix, args, message, isAdmin, remote, home, server, db, cooldowns, commands, servers,
+        prefix, args, message, channel, isAdmin, remote, home, server, db, cooldowns, commands, servers,
         // The person running it, or null while remote: their id on this
         // server means someone else (or no one) on the other one.
         user: remote ? null : { id: userId, name: message.username, avatar: message.avatar },
@@ -52,6 +55,12 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
       console.error(`[${home.name}] ${prefix}${cmd.name} failed:`, err);
       out.reply(FAILED_REPLY).catch(() => {});
     }
+  }
+
+  // With no bot channels set, every channel counts.
+  function inBotChannel(home, channel) {
+    const ids = db.botChannels(home.key);
+    return !ids.length || ids.includes(channel?.id);
   }
 
   // Guests get one refusal, then nothing for 12 hours. True when refused.

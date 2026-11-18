@@ -15,6 +15,10 @@ const SCHEMA = `
     server TEXT NOT NULL, user_id INTEGER NOT NULL, cents INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (server, user_id)
   );
+  CREATE TABLE IF NOT EXISTS bot_channels (
+    server TEXT NOT NULL, channel_id INTEGER NOT NULL,
+    PRIMARY KEY (server, channel_id)
+  );
   CREATE TABLE IF NOT EXISTS items (
     server TEXT NOT NULL, user_id INTEGER NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL,
     PRIMARY KEY (server, user_id, item)
@@ -37,6 +41,11 @@ export function openDb(path) {
     cents: q('SELECT cents FROM wallets WHERE server = ? AND user_id = ?'),
     items: q('SELECT item, qty FROM items WHERE server = ? AND user_id = ? AND qty > 0'),
     addItem: q('INSERT INTO items (server, user_id, item, qty) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET qty = qty + excluded.qty'),
+    botChannels: q('SELECT channel_id FROM bot_channels WHERE server = ? ORDER BY rowid'),
+    addBotChannel: q('INSERT OR IGNORE INTO bot_channels (server, channel_id) VALUES (?, ?)'),
+    removeBotChannel: q('DELETE FROM bot_channels WHERE server = ? AND channel_id = ?'),
+    totalCents: q('SELECT COALESCE(SUM(cents), 0) AS cents FROM wallets WHERE server = ?'),
+    totalItems: q('SELECT item, SUM(qty) AS qty FROM items WHERE server = ? AND qty > 0 GROUP BY item'),
     takeItem: q('UPDATE items SET qty = qty - ? WHERE server = ? AND user_id = ? AND item = ? AND qty >= ?'),
     addCents: q('INSERT INTO wallets (server, user_id, cents) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET cents = cents + excluded.cents'),
   };
@@ -65,8 +74,16 @@ export function openDb(path) {
     blockGuest: (server, userId, until) => s.block.run(server, userId, until),
     purgeGuestBlocks: (now = Date.now()) => s.purgeBlocks.run(now),
 
+    botChannels: (server) => s.botChannels.all(server).map((r) => r.channel_id),
+    // Adds the channel, or removes it if it was already there. True when added.
+    toggleBotChannel: (server, channelId) =>
+      s.removeBotChannel.run(server, channelId).changes === 0 && s.addBotChannel.run(server, channelId).changes > 0,
+
     cents: (server, userId) => s.cents.get(server, userId)?.cents ?? 0,
     items: (server, userId) => s.items.all(server, userId),
+    // Everyone's money, and every item held, on one server.
+    totalCents: (server) => s.totalCents.get(server).cents,
+    totalItems: (server) => s.totalItems.all(server),
     addItem: (server, userId, item, qty = 1) => s.addItem.run(server, userId, item, qty),
     // Removes each { item, qty } from the box and pays `cents` for the lot.
     // False (and nothing changes) when any of them isn't there in full.

@@ -19,9 +19,9 @@ export class HavenClient extends EventEmitter {
     // from messages and member lists. isGuest is only known once the person
     // has been seen in a member list (messages don't carry it).
     this.members = new Map();
-    // Codes of the server channels Havoc answers in (no DMs), and which of
-    // them are forums.
-    this.serverChannels = new Set();
+    // Server channels Havoc answers in (no DMs), code → { id, name }, and
+    // which of them are forums.
+    this.serverChannels = new Map();
     this.forumChannels = new Set();
   }
 
@@ -81,7 +81,7 @@ export class HavenClient extends EventEmitter {
     // again joins its room too.
     this.socket.on('channels-list', (channels) => {
       const server = (channels || []).filter((c) => !c.is_dm && !c.is_group && !c.is_self_dm);
-      this.serverChannels = new Set(server.map((c) => c.code));
+      this.serverChannels = new Map(server.map((c) => [c.code, { id: c.id, name: c.name }]));
       this.forumChannels = new Set(server.filter((c) => c.is_forum).map((c) => c.code));
       this.emit('channels', channels);
     });
@@ -168,7 +168,27 @@ export class HavenClient extends EventEmitter {
   }
 
   anyChannel() {
-    return this.serverChannels.values().next().value;
+    return this.serverChannels.keys().next().value;
+  }
+
+  // A server channel by code, id, or name as typed in chat ("#bot_test"
+  // also finds "bot test"). Null when Havoc isn't in it.
+  channel(code) {
+    return this.serverChannels.get(code) ?? null;
+  }
+
+  channelById(id) {
+    for (const c of this.serverChannels.values()) if (c.id === id) return c;
+    return null;
+  }
+
+  channelByName(name) {
+    const want = name.replace(/^#/, '').toLowerCase();
+    for (const c of this.serverChannels.values()) {
+      const have = c.name.toLowerCase();
+      if (have === want || have === want.replace(/_/g, ' ')) return c;
+    }
+    return null;
   }
 
   // The online list (with guest flags) for a channel.
