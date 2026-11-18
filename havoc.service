@@ -1,0 +1,14 @@
+[Unit]
+Description=Havoc Haven bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/havoc
+ExecStart=/usr/bin/node --env-file=.env src/index.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

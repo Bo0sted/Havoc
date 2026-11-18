@@ -1,0 +1,17 @@
+{
+  "name": "havoc",
+  "version": "0.1.0",
+  "description": "Havoc: a prefix-command fun bot for Haven servers",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "preview-blowup": "node --env-file-if-exists=.env scripts/preview-blowup.js"
+  },
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "gifenc": "^1.0.3",
+    "sharp": "^0.34.4",
+    "socket.io-client": "^4.8.1"
+  }
+}
