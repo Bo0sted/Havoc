@@ -23,7 +23,7 @@ export default {
     let done = false;
     let warnTimer;
     try {
-      const word = WORDS[randomInt(WORDS.length)];
+      const { word, category } = WORDS[randomInt(WORDS.length)];
       const len = word.length;
       const shown = Array(len).fill(false);
       shown[randomInt(len)] = true;
@@ -37,6 +37,7 @@ export default {
       const render = () => [
         `Guess the word: \`${[...word].map((c, i) => (shown[i] ? c : '_')).join(' ')}\``,
         `${warned ? '⚠️ ' : ''}${len} letters · ${len - used} ${len - used === 1 ? 'try' : 'tries'} left · Payout: ${formatMoney(payout())} · Time's up <t:${endSecs}:R> (<t:${endSecs}:T>)`,
+        `Category: ${category}`,
       ].join('\n');
 
       const edit = await replyEditable(render());
