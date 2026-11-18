@@ -44,7 +44,9 @@ export class HavenClient extends EventEmitter {
     await this.login();
     this.socket = io(this.url, {
       auth: { token: this.token },
-      transports: ['websocket'],
+      // Default transports (long-polling, then a websocket upgrade if the
+      // server allows it), same as Haven's web app. Some servers sit behind a
+      // proxy that doesn't pass websockets through, and polling still works there.
       reconnectionDelayMax: 30_000,
     });
 
