@@ -15,7 +15,7 @@ export default {
     let who = user;
     if (args.length) {
       const { query, member } = await findTarget(findMember, args);
-      if (!member) return reply(`🤷 I can't find anyone called **${query}** here.`);
+      if (!member) return reply(`I can't find anyone called **${query}** here.`);
       who = member;
     }
     if (!who) return notHere();

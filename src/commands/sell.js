@@ -29,14 +29,14 @@ export default {
   economy: true,
   async run({ prefix, args, user, server, db, reply, notHere }) {
     if (!user) return notHere();
-    const usage = `💰 Usage: \`${prefix}sell <item> [amount|all]\` or \`${prefix}sell all\``;
+    const usage = `Usage: \`${prefix}sell <item> [amount|all]\` or \`${prefix}sell all\``;
     if (!args.length) return reply(usage);
 
     const owned = new Map(db.items(server.key, user.id).map((r) => [r.item, r.qty]));
     const finish = (lots, kept = '') => {
       const cents = lots.reduce((sum, l) => sum + l.item.price * l.qty, 0);
       const ok = db.sell(server.key, user.id, lots.map((l) => ({ item: l.item.id, qty: l.qty })), cents);
-      if (!ok) return reply('🤔 Your Safety Deposit Box changed while I was counting. Try again.');
+      if (!ok) return reply('Your Safety Deposit Box changed while I was counting. Try again.');
       const what = lots.length === 1 ? label(lots[0].item, lots[0].qty) : `${lots.reduce((n, l) => n + l.qty, 0)} items`;
       return reply(`💰 Sold ${what} for ${formatMoney(cents)}. You now have ${formatMoney(db.cents(server.key, user.id))}.${kept}`);
     };
@@ -46,7 +46,7 @@ export default {
       const sellable = [...owned].map(([id, qty]) => ({ item: itemById.get(id), qty })).filter((l) => l.item && !l.item.retired);
       const lots = sellable.filter((l) => l.item.tier !== 'legendary');
       const kept = sellable.length > lots.length ? ` Legendaries stay in your box: sell those by name.` : '';
-      if (!lots.length) return reply(`🗃️ Nothing to sell.${kept}`);
+      if (!lots.length) return reply(`Nothing to sell.${kept}`);
       return finish(lots, kept);
     }
 
@@ -55,16 +55,16 @@ export default {
     const name = (counted ? args.slice(0, -1) : args).join(' ');
     const { item, matches } = findItem(name, owned);
     if (!item) {
-      if (!matches.length) return reply(`🤷 There's no item called **${name}**.`);
-      return reply(`🤔 Which one? ${matches.map((i) => `${i.emoji} ${i.name}`).join(', ')}`);
+      if (!matches.length) return reply(`There's no item called **${name}**.`);
+      return reply(`Which one? ${matches.map((i) => `${i.emoji} ${i.name}`).join(', ')}`);
     }
-    if (item.retired) return reply(`🚫 ${item.emoji} **${item.name}** can't be sold.`);
+    if (item.retired) return reply(`${item.emoji} **${item.name}** can't be sold.`);
 
     const have = owned.get(item.id) ?? 0;
     const qty = !counted ? 1 : last === 'all' ? have : Number(last);
-    if (!have) return reply(`🗃️ You don't have any ${item.emoji} **${item.name}**.`);
+    if (!have) return reply(`You don't have any ${item.emoji} **${item.name}**.`);
     if (qty < 1) return reply(usage);
-    if (qty > have) return reply(`🗃️ You only have ${label(item, have)}.`);
+    if (qty > have) return reply(`You only have ${label(item, have)}.`);
     return finish([{ item, qty }]);
   },
 };

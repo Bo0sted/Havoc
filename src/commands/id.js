@@ -12,7 +12,7 @@ export default {
       return remote || !channel ? notHere() : reply(`🪪 **#${channel.name}**'s ID is **${channel.id}**`);
     }
     const { query, member } = await findTarget(findMember, args);
-    if (!member) return reply(`🤷 I can't find anyone called **${query}** here.`);
+    if (!member) return reply(`I can't find anyone called **${query}** here.`);
     return reply(`🪪 **${member.name}**'s ID is **${member.id}**`);
   },
 };

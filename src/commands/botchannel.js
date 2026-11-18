@@ -7,7 +7,7 @@ export default {
   description: 'list bot channels, or add/remove one (once set, commands only work in them)',
   admin: true,
   async run({ prefix, args, server, db, reply }) {
-    const usage = `📌 Usage: \`${prefix}botchannel list\` or \`${prefix}botchannel <id|#channel>\``;
+    const usage = `Usage: \`${prefix}botchannel list\` or \`${prefix}botchannel <id|#channel>\``;
     if (!args.length) return reply(usage);
     const client = server.client;
     const listed = db.botChannels(server.key);
@@ -26,7 +26,7 @@ export default {
     const id = /^\d+$/.test(text) ? Number(text) : null;
     const channel = id !== null ? client.channelById(id) : client.channelByName(text);
     if (!channel && !listed.includes(id)) {
-      return reply(`🤷 I can't find a channel ${id !== null ? 'with ID' : 'called'} **${text}** here.`);
+      return reply(`I can't find a channel ${id !== null ? 'with ID' : 'called'} **${text}** here.`);
     }
 
     const channelId = channel?.id ?? id;

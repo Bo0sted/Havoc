@@ -9,7 +9,7 @@ import { formatWait } from './duration.js';
 
 const GUEST_BLOCK = 12 * 3_600_000;
 const GUEST_REPLY = 'Guest accounts are unable to use economy commands';
-const FAILED_REPLY = '💥 Something went wrong (and not the fun kind of explosion).';
+const FAILED_REPLY = 'Something went wrong (and not the fun kind of explosion).';
 
 export function createRouter({ prefix, commands, servers, db, cooldowns }) {
   const byName = new Map();
@@ -94,7 +94,7 @@ function output(home, { channelCode, message, threadId }, remoteName, prefix) {
     },
     notHere: async () => {
       noted = true;
-      home.client.send(channelCode, `${note}🛰️ That one acts on you, so it can't run remotely. Name someone instead, or type \`${prefix}remote\` to come back.`, where);
+      home.client.send(channelCode, `${note}That one acts on you, so it can't run remotely. Name someone instead, or type \`${prefix}remote\` to come back.`, where);
     },
   };
 }

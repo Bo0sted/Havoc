@@ -9,9 +9,13 @@ const { GIFEncoder, quantize, applyPalette } = gifenc;
 const SIZE = 256;
 const FRAMES = 14;
 const MAX_AMOUNT = 5; // how far it bulges at the end; higher = more warped
+// Biggest picture accepted (50 megapixels: a 48MP phone photo fits). A small
+// file can unpack into a huge image, and decoding one bigger than this could
+// use up the VM's memory.
+export const MAX_PIXELS = 50_000_000;
 
 async function loadPicture(input) {
-  return sharp(input, { animated: false })
+  return sharp(input, { animated: false, limitInputPixels: MAX_PIXELS })
     .resize(SIZE, SIZE, { fit: 'cover' })
     .flatten({ background: '#1e1f22' }) // transparent avatars get a dark backing
     .raw()
