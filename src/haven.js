@@ -18,8 +18,10 @@ export class HavenClient extends EventEmitter {
     // Display name (lowercased) and id → { id, name, avatar }, filled from
     // messages and member lists so commands can find someone's picture.
     this.members = new Map();
-    // Codes of the server channels Havoc answers in (no DMs).
+    // Codes of the server channels Havoc answers in (no DMs), and which of
+    // them are forums.
     this.serverChannels = new Set();
+    this.forumChannels = new Set();
   }
 
   async login() {
@@ -77,9 +79,9 @@ export class HavenClient extends EventEmitter {
     // A channel created or joined later shows up as a fresh list; asking
     // again joins its room too.
     this.socket.on('channels-list', (channels) => {
-      this.serverChannels = new Set(
-        (channels || []).filter((c) => !c.is_dm && !c.is_group && !c.is_self_dm).map((c) => c.code)
-      );
+      const server = (channels || []).filter((c) => !c.is_dm && !c.is_group && !c.is_self_dm);
+      this.serverChannels = new Set(server.map((c) => c.code));
+      this.forumChannels = new Set(server.filter((c) => c.is_forum).map((c) => c.code));
       this.emit('channels', channels);
     });
 
@@ -88,19 +90,41 @@ export class HavenClient extends EventEmitter {
       this.emit('members', channelCode);
     });
 
+    // In a forum every top-level message starts a topic, so a command posted
+    // as a new topic is answered inside that topic, not with topics of its own.
     this.socket.on('new-message', ({ channelCode, message }) => {
       if (!message) return;
-      this.remember(message.user_id, message.username, message.avatar);
-      if (message.user_id === this.user.id || message.is_webhook) return;
-      // Only server channels: DMs and group DMs are ignored. A channel not
-      // in the list yet might be a new DM, so it is skipped and the list
-      // refreshed rather than guessed at.
-      if (!this.serverChannels.has(channelCode)) {
-        this.socket.emit('get-channels');
-        return;
-      }
-      this.emit('message', { channelCode, message });
+      const threadId = this.forumChannels.has(channelCode) ? message.id : null;
+      this.incoming(channelCode, message, threadId);
     });
+
+    // Replies inside a forum topic, or in a thread on an ordinary message.
+    this.socket.on('new-thread-message', ({ channelCode, parentId, message }) => {
+      if (!message || !parentId) return;
+      this.incoming(channelCode, message, parentId);
+    });
+  }
+
+  incoming(channelCode, message, threadId) {
+    this.remember(message.user_id, message.username, message.avatar);
+    if (message.user_id === this.user.id || message.is_webhook) return;
+    // Only server channels: DMs and group DMs are ignored. A channel not
+    // in the list yet might be a new DM, so it is skipped and the list
+    // refreshed rather than guessed at.
+    if (!this.serverChannels.has(channelCode)) {
+      this.socket.emit('get-channels');
+      return;
+    }
+    this.emit('message', { channelCode, message, threadId });
+  }
+
+  // Posts in the channel, or inside a topic/thread when threadId is set.
+  post(channelCode, fields, { replyTo, threadId } = {}) {
+    if (threadId) {
+      this.socket.emit('send-thread-message', { parentId: threadId, silent: true, ...fields, ...(replyTo && { replyTo }) });
+    } else {
+      this.socket.emit('send-message', { code: channelCode, silent: true, ...fields, ...(replyTo && { replyTo }) });
+    }
   }
 
   remember(id, name, avatar) {
@@ -130,13 +154,13 @@ export class HavenClient extends EventEmitter {
     return /^https?:\/\//i.test(path) ? path : `${this.url}${path.startsWith('/') ? '' : '/'}${path}`;
   }
 
-  send(channelCode, content, { replyTo } = {}) {
-    this.socket.emit('send-message', { code: channelCode, content, silent: true, ...(replyTo && { replyTo }) });
+  send(channelCode, content, opts) {
+    this.post(channelCode, { content }, opts);
   }
 
   // Uploads an image through the same endpoint the web app uses, then posts
   // it the way the app does: the /uploads/ path as the message.
-  async sendImage(channelCode, buffer, filename, mime, { replyTo } = {}) {
+  async sendImage(channelCode, buffer, filename, mime, opts) {
     const form = new FormData();
     form.append('image', new Blob([buffer], { type: mime }), filename);
     const res = await fetch(`${this.url}/api/upload`, {
@@ -146,12 +170,6 @@ export class HavenClient extends EventEmitter {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.url) throw new Error(`Upload failed (${res.status}): ${body.error || 'no details'}`);
-    this.socket.emit('send-message', {
-      code: channelCode,
-      content: body.url,
-      isImage: true,
-      silent: true,
-      ...(replyTo && { replyTo }),
-    });
+    this.post(channelCode, { content: body.url, isImage: true }, opts);
   }
 }

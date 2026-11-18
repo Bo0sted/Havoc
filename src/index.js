@@ -31,15 +31,17 @@ haven.on('ready', (user) => console.log(`Havoc is online as ${user.displayName} 
 haven.on('warn', (msg) => console.warn(msg));
 haven.on('error', (err) => console.error(err.message));
 
-haven.on('message', async ({ channelCode, message }) => {
+haven.on('message', async ({ channelCode, message, threadId }) => {
   const text = (message.content || '').trim();
   if (!text.toLowerCase().startsWith(PREFIX.toLowerCase())) return;
   const [name, ...args] = text.slice(PREFIX.length).trim().split(/\s+/);
   const cmd = commands.get((name || '').toLowerCase());
   if (!cmd) return;
 
-  const reply = (content) => haven.send(channelCode, content, { replyTo: message.id });
-  const replyImage = (buffer, filename, mime) => haven.sendImage(channelCode, buffer, filename, mime, { replyTo: message.id });
+  // Answers go where the command was: the channel, or the topic/thread it was typed in.
+  const where = { replyTo: message.id, threadId };
+  const reply = (content) => haven.send(channelCode, content, where);
+  const replyImage = (buffer, filename, mime) => haven.sendImage(channelCode, buffer, filename, mime, where);
   try {
     await cmd.run({ haven, channelCode, message, args, prefix: PREFIX, reply, replyImage });
   } catch (err) {
