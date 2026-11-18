@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { formatMoney } from '../items.js';
+import { claimGame } from '../games.js';
 
 // Simple, friendly nouns; each round shows CHOICES of them. The odds only
 // depend on CHOICES (1 in 4), never on how long this list is.
@@ -30,7 +31,6 @@ function draw() {
 }
 
 const pays = (streak) => BASE * 2 ** streak; // what the next win pays
-const playing = new Set(); // admins skip cooldowns, so one game at a time
 
 export default {
   name: 'lottery',
@@ -41,9 +41,8 @@ export default {
   economy: true,
   async run({ cmd, user, server, db, cooldowns, awaitAnswer, replyEditable, notHere }) {
     if (!user) return notHere();
-    const key = `${server.key}\n${user.id}`;
-    if (playing.has(key)) return;
-    playing.add(key);
+    const release = claimGame(server.key, user.id);
+    if (!release) return;
     try {
       const { shown, answer } = draw();
       const edit = await replyEditable(
@@ -65,7 +64,7 @@ export default {
         ? `🎟️ Sorry **${user.name}**, the word was **${answer}** (you picked **${guess.toLowerCase()}**).${lost}`
         : `⌛ Timed out, the word was **${answer}**.${lost}`);
     } finally {
-      playing.delete(key);
+      release();
     }
   },
 };

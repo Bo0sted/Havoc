@@ -27,6 +27,18 @@ const SCHEMA = `
     server TEXT NOT NULL, user_id INTEGER NOT NULL, streak INTEGER NOT NULL,
     PRIMARY KEY (server, user_id)
   );
+  CREATE TABLE IF NOT EXISTS pending_bets (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, cents INTEGER NOT NULL,
+    PRIMARY KEY (server, user_id)
+  );
+  CREATE TABLE IF NOT EXISTS bet_stats (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, game TEXT NOT NULL,
+    bets INTEGER NOT NULL DEFAULT 0, wins INTEGER NOT NULL DEFAULT 0, losses INTEGER NOT NULL DEFAULT 0,
+    ties INTEGER NOT NULL DEFAULT 0, timeouts INTEGER NOT NULL DEFAULT 0,
+    wagered INTEGER NOT NULL DEFAULT 0, won INTEGER NOT NULL DEFAULT 0, lost INTEGER NOT NULL DEFAULT 0,
+    penalties INTEGER NOT NULL DEFAULT 0, biggest_win INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (server, user_id, game)
+  );
   CREATE TABLE IF NOT EXISTS items (
     server TEXT NOT NULL, user_id INTEGER NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL,
     PRIMARY KEY (server, user_id, item)
@@ -60,6 +72,17 @@ export function openDb(path) {
     setDaily: q('INSERT INTO dailies (server, user_id, last, streak) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET last = excluded.last, streak = excluded.streak'),
     lotteryStreak: q('SELECT streak FROM lottery_streaks WHERE server = ? AND user_id = ?'),
     setLotteryStreak: q('INSERT INTO lottery_streaks (server, user_id, streak) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET streak = excluded.streak'),
+    takeCents: q('UPDATE wallets SET cents = cents - ? WHERE server = ? AND user_id = ? AND cents >= ?'),
+    holdBet: q('INSERT INTO pending_bets (server, user_id, cents) VALUES (?, ?, ?)'),
+    dropBet: q('DELETE FROM pending_bets WHERE server = ? AND user_id = ?'),
+    pendingBets: q('SELECT server, user_id, cents FROM pending_bets'),
+    recordBet: q(`INSERT INTO bet_stats (server, user_id, game, bets, wins, losses, ties, timeouts, wagered, won, lost, penalties, biggest_win)
+      VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT DO UPDATE SET bets = bets + 1, wins = wins + excluded.wins, losses = losses + excluded.losses,
+        ties = ties + excluded.ties, timeouts = timeouts + excluded.timeouts, wagered = wagered + excluded.wagered,
+        won = won + excluded.won, lost = lost + excluded.lost, penalties = penalties + excluded.penalties,
+        biggest_win = MAX(biggest_win, excluded.biggest_win)`),
+    betStats: q('SELECT * FROM bet_stats WHERE server = ? AND user_id = ?'),
     takeItem: q('UPDATE items SET qty = qty - ? WHERE server = ? AND user_id = ? AND item = ? AND qty >= ?'),
     addCents: q('INSERT INTO wallets (server, user_id, cents) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET cents = cents + excluded.cents'),
   };
@@ -77,6 +100,14 @@ export function openDb(path) {
       throw err;
     }
   }
+
+  // Bets still held when Havoc last stopped never finished: hand them back.
+  atomic(() => {
+    for (const bet of s.pendingBets.all()) {
+      s.addCents.run(bet.server, bet.user_id, bet.cents);
+      s.dropBet.run(bet.server, bet.user_id);
+    }
+  });
 
   return {
     overrides: (server) => new Map(s.overrides.all(server).map((r) => [r.command, r.ms])),
@@ -98,6 +129,28 @@ export function openDb(path) {
     // Everyone's money, and every item held, on one server.
     totalCents: (server) => s.totalCents.get(server).cents,
     totalItems: (server) => s.totalItems.all(server),
+    // A bet's wager leaves the wallet and is recorded until settleBet pays
+    // out (the whole wager, part of it, or nothing). False if they can't
+    // afford it.
+    holdBet: (server, userId, cents) => atomic(() => {
+      if (s.takeCents.run(cents, server, userId, cents).changes === 0) return false;
+      s.holdBet.run(server, userId, cents);
+      return true;
+    }),
+    // `outcome` (game, result, wager) goes into their betting record in the
+    // same transaction as the payout.
+    settleBet: (server, userId, payout, outcome) => atomic(() => {
+      s.dropBet.run(server, userId);
+      if (payout > 0) s.addCents.run(server, userId, payout);
+      if (!outcome) return; // a refund, not a finished bet
+      const { game, result, wager } = outcome;
+      const profit = Math.max(0, payout - wager);
+      const loss = Math.max(0, wager - payout);
+      s.recordBet.run(server, userId, game, +(result === 'win'), +(result === 'lose'), +(result === 'tie'), +(result === 'timeout'),
+        wager, profit, loss, result === 'timeout' ? loss : 0, profit);
+    }),
+    // Their betting record, one row per game.
+    betStats: (server, userId) => s.betStats.all(server, userId),
     // Every wallet and every held item on one server, for rankings.
     wallets: (server) => s.wallets.all(server),
     allItems: (server) => s.allItems.all(server),

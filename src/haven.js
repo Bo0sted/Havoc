@@ -154,7 +154,11 @@ export class HavenClient extends EventEmitter {
   sendForEdit(channelCode, content, opts) {
     return new Promise((resolve) => {
       const done = (id) => { clearTimeout(timer); this.off('own-message', onOwn); resolve(id); };
-      const onOwn = (e) => { if (e.channelCode === channelCode && e.message.content === content) done(e.message.id); };
+      // Matched by what it replies to as well, so two identical messages
+      // (two people playing at once) never get mixed up.
+      const onOwn = ({ channelCode: code, message: m }) => {
+        if (code === channelCode && m.content === content && (!opts?.replyTo || m.reply_to === opts.replyTo)) done(m.id);
+      };
       const timer = setTimeout(() => done(null), 5000);
       this.on('own-message', onOwn);
       this.send(channelCode, content, opts);

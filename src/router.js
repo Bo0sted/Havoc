@@ -46,8 +46,10 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
     try {
       if (cmd.economy && !isAdmin && (await refuseGuest(home, userId, channelCode, out))) return;
       if (!isAdmin) {
-        const wait = cooldowns.take(server.key, cmd, userId);
-        if (wait) return await out.reply(cmd.cooldownText?.(formatWait(wait)) ?? `⏳ Slow down! Try \`${prefix}${cmd.name}\` again in ${formatWait(wait)}.`);
+        // A subcommand can have a cooldown of its own (e.g. ?bet record).
+        const timed = cmd.cooldownFor?.(args) ?? cmd;
+        const wait = cooldowns.take(server.key, timed, userId);
+        if (wait) return await out.reply(timed.cooldownText?.(formatWait(wait)) ?? `⏳ Slow down! Try \`${prefix}${timed.name}\` again in ${formatWait(wait)}.`);
       }
       const busy = cooldowns.takeGlobal(cmd);
       if (busy) return await out.reply(`⏳ Everyone wants \`${prefix}${cmd.name}\` right now! It's free again in ${formatWait(busy)}.`);
@@ -61,9 +63,14 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
         // takes, or null after `ms`. Other messages go on as usual.
         awaitAnswer: (accepts, ms) => new Promise((resolve) => {
           const key = answerKey(home, channelCode, threadId, userId);
-          const finish = (value) => { clearTimeout(timer); waiting.delete(key); resolve(value); };
+          const check = (answer) => accepts(answer) && (finish(answer), true);
+          const finish = (value) => {
+            clearTimeout(timer);
+            if (waiting.get(key) === check) waiting.delete(key);
+            resolve(value);
+          };
           const timer = setTimeout(() => finish(null), ms);
-          waiting.set(key, (answer) => accepts(answer) && (finish(answer), true));
+          waiting.set(key, check);
         }),
         remotes: { get: () => remotes.get(remoteKey(home, userId)) ?? null, set: (s) => remotes.set(remoteKey(home, userId), s), clear: () => remotes.delete(remoteKey(home, userId)) },
         ...out,
