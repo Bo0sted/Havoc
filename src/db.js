@@ -195,6 +195,14 @@ export function openDb(path) {
       s.addCents.run(server, userId, cents);
       return true;
     }),
+    addCents: (server, userId, cents) => s.addCents.run(server, userId, cents),
+    // Takes up to `cents`, never below $0 (nobody goes into debt). Returns
+    // how much was actually taken.
+    takeUpTo: (server, userId, cents) => atomic(() => {
+      const taken = Math.min(cents, s.cents.get(server, userId)?.cents ?? 0);
+      if (taken > 0) s.takeCents.run(taken, server, userId, taken);
+      return taken;
+    }),
     // Every wallet and every held item on one server, for rankings.
     wallets: (server) => s.wallets.all(server),
     allItems: (server) => s.allItems.all(server),

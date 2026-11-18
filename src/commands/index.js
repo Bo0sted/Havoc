@@ -16,6 +16,7 @@ import shop from './shop.js';
 import gdp from './gdp.js';
 import daily from './daily.js';
 import lottery from './lottery.js';
+import hangman from './hangman.js';
 import top from './top.js';
 import bet from './bet.js';
 import blowup from './blowup.js';
@@ -24,4 +25,4 @@ import cooldown from './cooldown.js';
 import botchannel from './botchannel.js';
 import remote from './remote.js';
 
-export default [help, cat, dog, fox, duck, funfact, dadjoke, advice, pokemon, fish, mine, daily, lottery, money, sell, shop, top, gdp, bet, blowup, id, cooldown, botchannel, remote];
+export default [help, cat, dog, fox, duck, funfact, dadjoke, advice, pokemon, fish, mine, daily, lottery, hangman, money, sell, shop, top, gdp, bet, blowup, id, cooldown, botchannel, remote];
