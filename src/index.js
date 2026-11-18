@@ -51,7 +51,9 @@ async function connect(server) {
     try {
       return await server.client.connect();
     } catch (err) {
-      console.warn(`[${server.name}] ${err.message}. Retrying in 10s...`);
+      // fetch's own message is just "fetch failed"; the cause says why.
+      const why = err.cause ? ` (${err.cause.code ?? ''} ${err.cause.message ?? ''})`.replace('( ', '(') : '';
+      console.warn(`[${server.name}] ${err.message}${why}. Retrying in 10s...`);
       await new Promise((r) => setTimeout(r, 10_000));
     }
   }
