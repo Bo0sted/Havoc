@@ -1,8 +1,7 @@
 import sharp from 'sharp';
 import { explodeAvatar } from '../explode.js';
-import { cooldown } from '../cooldown.js';
+import { findTarget } from '../members.js';
 
-const onCooldown = cooldown(15_000);
 const MAX_BYTES = 15 * 1024 * 1024;
 
 // Haven writes each attachment into the message text on its own line:
@@ -40,17 +39,17 @@ async function loadImage(haven, path) {
 export default {
   name: 'blowup',
   aliases: ['explode', 'boom'],
-  description: 'blow up someone\'s profile picture, or an attached image: blowup @user',
-  async run({ haven, channelCode, message, reply, replyImage, prefix }) {
-    const wait = onCooldown(message.user_id);
-    if (wait) return reply(`💣 Still reloading the TNT. Try again in ${wait}s.`);
-
+  description: 'blow up a profile picture or an attached image: blowup @user',
+  cooldown: 15_000,
+  cooldownText: (wait) => `💣 Still reloading the TNT. Try again in ${wait}.`,
+  async run({ prefix, message, user, home, server, findMember, reply, replyImage, notHere }) {
     const { paths, text } = attachmentsOf(message.content);
 
     // Attached files win over names: use the first one that is a picture.
+    // They were uploaded where the command was typed, so they're fetched there.
     if (paths.length) {
       for (const path of paths) {
-        const picture = await loadImage(haven, path);
+        const picture = await loadImage(home.client, path);
         if (!picture) continue;
         await reply(`💥 **${message.username}** blew it up!`);
         return replyImage(await explodeAvatar(picture, message.username), 'boom.gif', 'image/gif');
@@ -59,23 +58,19 @@ export default {
     }
 
     const args = text.trim().slice(prefix.length).trim().split(/\s+/).slice(1);
-    let target = { id: message.user_id, name: message.username, avatar: message.avatar };
-    const query = args.join(' ').replace(/^@/, '').trim();
-    if (query) {
-      // Display names can have spaces, so try the whole thing before just
-      // the first word.
-      target = await haven.findMember(channelCode, query)
-        ?? await haven.findMember(channelCode, args[0].replace(/^@/, ''));
-      if (!target) return reply(`🤷 I can't find anyone called **${query}** here.`);
+    let target = user;
+    if (args.length) {
+      const found = await findTarget(findMember, args);
+      if (!found.member) return reply(`🤷 I can't find anyone called **${found.query}** here.`);
+      target = found.member;
     }
+    if (!target) return notHere();
 
-    let picture = null;
-    if (target.avatar) picture = await loadImage(haven, target.avatar);
+    const picture = target.avatar ? await loadImage(server.client, target.avatar) : null;
     const gif = await explodeAvatar(picture, target.name);
-    const line = target.id === message.user_id
+    await reply(target.id === user?.id
       ? `💥 **${message.username}** blew themselves up.`
-      : `💥 **${message.username}** blew up **${target.name}**!`;
-    await reply(line);
+      : `💥 **${message.username}** blew up **${target.name}**!`);
     return replyImage(gif, 'boom.gif', 'image/gif');
   },
 };

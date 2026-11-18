@@ -1,3 +1,5 @@
 node_modules/
 .env
 out/
+havoc.db
+havoc.db-*

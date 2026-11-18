@@ -1,64 +1,65 @@
 import { HavenClient } from './haven.js';
-import cat from './commands/cat.js';
-import fish from './commands/fish.js';
-import bet from './commands/bet.js';
-import blowup from './commands/blowup.js';
+import { loadServers } from './config.js';
+import { openDb } from './db.js';
+import { createCooldowns } from './cooldowns.js';
+import { createRouter } from './router.js';
+import commands from './commands/index.js';
 
-const { HAVEN_URL, HAVOC_USERNAME, HAVOC_PASSWORD, PREFIX = 'h!' } = process.env;
-if (!HAVEN_URL || !HAVOC_USERNAME || !HAVOC_PASSWORD) {
-  console.error('Set HAVEN_URL, HAVOC_USERNAME and HAVOC_PASSWORD (see .env.example).');
+const PREFIX = process.env.PREFIX || 'h!';
+const DB_PATH = process.env.DB_PATH || new URL('../havoc.db', import.meta.url).pathname;
+if (process.env.HAVEN_INSECURE_TLS === '1') process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+// Nothing that goes wrong is allowed to take the bot down or reach chat.
+process.on('unhandledRejection', (err) => console.error('Unhandled error:', err));
+process.on('uncaughtException', (err) => console.error('Uncaught error:', err));
+
+let servers;
+try {
+  servers = loadServers();
+} catch (err) {
+  console.error(err.message);
   process.exit(1);
 }
-if (process.env.HAVEN_INSECURE_TLS === '1') process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-const commands = new Map();
-for (const cmd of [cat, fish, bet, blowup]) {
-  commands.set(cmd.name, cmd);
-  for (const alias of cmd.aliases ?? []) commands.set(alias, cmd);
+if (!servers.length) {
+  console.error('No usable servers in SERVERS, so there is nothing to connect to. Stopping.');
+  process.exit(1);
 }
 
-const help = {
-  name: 'help',
-  async run({ reply }) {
-    const lines = [cat, fish, bet, blowup].map((c) => `\`${PREFIX}${c.name}\` ${c.description}`);
-    return reply(`**Havoc commands**\n${lines.join('\n')}`);
-  },
-};
-commands.set('help', help);
+const db = openDb(DB_PATH);
+const cooldowns = createCooldowns(db);
+const router = createRouter({ prefix: PREFIX, commands, servers, db, cooldowns });
 
-const haven = new HavenClient({ url: HAVEN_URL, username: HAVOC_USERNAME, password: HAVOC_PASSWORD });
+// Expired guest blocks and stale cooldowns are cleared out hourly.
+setInterval(() => {
+  db.purgeGuestBlocks();
+  cooldowns.prune();
+}, 3_600_000).unref();
 
-haven.on('ready', (user) => console.log(`Havoc is online as ${user.displayName} (prefix ${PREFIX})`));
-haven.on('warn', (msg) => console.warn(msg));
-haven.on('error', (err) => console.error(err.message));
+for (const server of servers) {
+  const log = (fn) => (msg) => fn(`[${server.name}] ${msg}`);
+  server.client = new HavenClient(server);
+  server.client.on('ready', (user) => console.log(`[${server.name}] online as ${user.displayName} (prefix ${PREFIX})`));
+  server.client.on('warn', log(console.warn));
+  server.client.on('error', (err) => console.error(`[${server.name}] ${err.message}`));
+  server.client.on('message', (event) => router.handle(server, event));
+  connect(server);
+}
 
-haven.on('message', async ({ channelCode, message, threadId }) => {
-  const text = (message.content || '').trim();
-  if (!text.toLowerCase().startsWith(PREFIX.toLowerCase())) return;
-  const [name, ...args] = text.slice(PREFIX.length).trim().split(/\s+/);
-  const cmd = commands.get((name || '').toLowerCase());
-  if (!cmd) return;
-
-  // Answers go where the command was: the channel, or the topic/thread it was typed in.
-  const where = { replyTo: message.id, threadId };
-  const reply = (content) => haven.send(channelCode, content, where);
-  const replyImage = (buffer, filename, mime) => haven.sendImage(channelCode, buffer, filename, mime, where);
-  try {
-    await cmd.run({ haven, channelCode, message, args, prefix: PREFIX, reply, replyImage });
-  } catch (err) {
-    console.error(`${PREFIX}${name} failed:`, err);
-    reply('💥 Something went wrong (and not the fun kind of explosion).');
-  }
-});
-
-// Keep trying until the server is up and the login works.
-async function start() {
+// Each server keeps trying on its own until it's up and the login works.
+async function connect(server) {
   for (;;) {
     try {
-      return await haven.connect();
+      return await server.client.connect();
     } catch (err) {
-      console.warn(`${err.message}. Retrying in 10s...`);
+      console.warn(`[${server.name}] ${err.message}. Retrying in 10s...`);
       await new Promise((r) => setTimeout(r, 10_000));
     }
   }
 }
-start();
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    db.close();
+    process.exit(0);
+  });
+}

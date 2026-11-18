@@ -15,8 +15,9 @@ export class HavenClient extends EventEmitter {
     this.token = null;
     this.user = null;
     this.socket = null;
-    // Display name (lowercased) and id → { id, name, avatar }, filled from
-    // messages and member lists so commands can find someone's picture.
+    // Display name (lowercased) and id → { id, name, avatar, isGuest }, filled
+    // from messages and member lists. isGuest is only known once the person
+    // has been seen in a member list (messages don't carry it).
     this.members = new Map();
     // Codes of the server channels Havoc answers in (no DMs), and which of
     // them are forums.
@@ -85,9 +86,26 @@ export class HavenClient extends EventEmitter {
       this.emit('channels', channels);
     });
 
+    // Who is online in a channel. Haven leaves isGuest out when it is false.
     this.socket.on('online-users', ({ channelCode, users }) => {
-      for (const u of users || []) this.remember(u.id, u.username, u.avatar);
+      for (const u of users || []) this.remember(u.id, u.username, u.avatar, !!u.isGuest);
       this.emit('members', channelCode);
+    });
+
+    // Everyone in a channel, offline too (what @mention autocomplete uses),
+    // findable by display name or login name. No avatars in this list.
+    this.socket.on('channel-members', ({ channelCode, members }) => {
+      for (const m of members || []) {
+        this.remember(m.id, m.username);
+        if (m.loginName) this.members.set(m.loginName.toLowerCase(), this.members.get(m.id));
+      }
+      this.emit('channel-members', channelCode);
+    });
+
+    this.socket.on('user-profile', (p) => {
+      if (p?.id == null) return;
+      this.remember(p.id, p.displayName, p.avatar ?? null);
+      this.emit('profile', p.id);
     });
 
     // In a forum every top-level message starts a topic, so a command posted
@@ -127,27 +145,57 @@ export class HavenClient extends EventEmitter {
     }
   }
 
-  remember(id, name, avatar) {
+  // avatar: undefined = not known yet, null = has none.
+  remember(id, name, avatar, isGuest) {
     if (id == null || !name) return;
-    const entry = { id, name, avatar: avatar ?? this.members.get(id)?.avatar ?? null };
+    const prev = this.members.get(id);
+    const entry = { id, name, avatar: avatar !== undefined ? avatar : prev?.avatar, isGuest: isGuest ?? prev?.isGuest };
     this.members.set(id, entry);
     this.members.set(name.toLowerCase(), entry);
   }
 
-  // Finds a member by display name. Anyone who has talked since Havoc
-  // started is known already; otherwise the channel's member list is
-  // fetched once and checked again.
-  async findMember(channelCode, name) {
-    const key = name.toLowerCase();
-    if (this.members.has(key)) return this.members.get(key);
-    await new Promise((resolve) => {
-      const done = () => { clearTimeout(timer); this.off('members', onMembers); resolve(); };
-      const onMembers = (code) => { if (code === channelCode) done(); };
+  // Sends a request and waits briefly for its answer (Haven's replies carry
+  // no request id, so `matches` picks the right one).
+  ask(event, data, replyEvent, matches) {
+    if (!this.socket?.connected) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => { clearTimeout(timer); this.off(replyEvent, onReply); resolve(); };
+      const onReply = (value) => { if (matches(value)) done(); };
       const timer = setTimeout(done, 2000);
-      this.on('members', onMembers);
-      this.socket.emit('enter-channel', { code: channelCode });
+      this.on(replyEvent, onReply);
+      this.socket.emit(event, data);
     });
-    return this.members.get(key) || null;
+  }
+
+  anyChannel() {
+    return this.serverChannels.values().next().value;
+  }
+
+  // The online list (with guest flags) for a channel.
+  loadOnline(code = this.anyChannel()) {
+    return code ? this.ask('enter-channel', { code }, 'members', (c) => c === code) : Promise.resolve();
+  }
+
+  // Finds a member by display or login name, offline people included, with
+  // their avatar. Known people answer from memory; otherwise the channel's
+  // full member list (and then their profile, for the avatar) is fetched.
+  async findMember(name, channelCode = this.anyChannel()) {
+    const key = name.toLowerCase();
+    if (!this.members.has(key) && channelCode) {
+      await this.ask('get-channel-members', { code: channelCode }, 'channel-members', (c) => c === channelCode);
+    }
+    const member = this.members.get(key);
+    if (member && member.avatar === undefined) {
+      await this.ask('get-user-profile', { userId: member.id }, 'profile', (id) => id === member.id);
+    }
+    return this.members.get(key) ?? null;
+  }
+
+  // Whether an account is a guest. Ids are never reused, so once known the
+  // answer never changes; unknown after a fresh online list counts as not.
+  async isGuest(id, channelCode) {
+    if (this.members.get(id)?.isGuest === undefined) await this.loadOnline(channelCode);
+    return this.members.get(id)?.isGuest === true;
   }
 
   absoluteUrl(path) {
