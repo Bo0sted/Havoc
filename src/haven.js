@@ -310,24 +310,23 @@ export class HavenClient extends EventEmitter {
   // `reason` fit for chat.
   async setAvatar(buffer, filename, mime) {
     if (!this.socket?.connected) throw refusal('not connected');
-    const upload = () => {
+    const upload = async () => {
       const form = new FormData();
       form.append('avatar', new Blob([buffer], { type: mime }), filename);
-      return fetch(`${this.url}/api/upload-avatar`, { method: 'POST', headers: { Authorization: `Bearer ${this.token}` }, body: form });
-    };
-    let res;
-    try {
-      res = await upload();
-      // The sign-in expired: sign in again and try once more.
-      if (res.status === 401) {
-        await this.login();
-        res = await upload();
+      try {
+        return await fetch(`${this.url}/api/upload-avatar`, { method: 'POST', headers: { Authorization: `Bearer ${this.token}` }, body: form });
+      } catch (err) {
+        throw Object.assign(refusal("couldn't reach the server"), { cause: err });
       }
-    } catch (err) {
-      throw Object.assign(refusal("couldn't reach the server"), { cause: err });
+    };
+    let res = await upload();
+    // The sign-in expired: sign in again and try once more.
+    if (res.status === 401) {
+      await this.login();
+      res = await upload();
     }
     const body = await res.json().catch(() => ({}));
-    if (!res.ok || !body.url) throw refusal(body.error || `the server refused it (${res.status})`);
+    if (!res.ok || !body.url) throw Object.assign(refusal(body.error || 'the server refused it'), { cause: `HTTP ${res.status}` });
     this.socket.emit('set-avatar', { url: body.url });
   }
 
