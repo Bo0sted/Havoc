@@ -2,12 +2,12 @@ import { ITEMS } from '../items.js';
 
 // How often each kind of catch comes up (weights, not percentages).
 const TIERS = [
-  { tier: 'nothing', weight: 12 },
-  { tier: 'trash', weight: 14 },
-  { tier: 'common', weight: 44 },
-  { tier: 'rare', weight: 18 },
-  { tier: 'epic', weight: 9 },
-  { tier: 'legendary', weight: 3 },
+  { tier: 'nothing', weight: 14 },
+  { tier: 'trash', weight: 17 },
+  { tier: 'common', weight: 48 },
+  { tier: 'rare', weight: 13 },
+  { tier: 'epic', weight: 6 },
+  { tier: 'legendary', weight: 2 },
 ];
 const TOTAL = TIERS.reduce((sum, t) => sum + t.weight, 0);
 

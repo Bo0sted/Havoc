@@ -5,6 +5,9 @@ const DAY = 86_400_000; // longer than any cooldown can be
 
 export function createCooldowns(db) {
   const lastUse = new Map();
+  // Command name → recent use times across every server and person, for
+  // commands whose API only allows so many requests (rateLimit).
+  const globalUses = new Map();
 
   // The cooldown a command has on a server right now.
   const lengthOf = (server, cmd) => db.overrides(server).get(cmd.name) ?? cmd.cooldown ?? 0;
@@ -19,6 +22,18 @@ export function createCooldowns(db) {
       const left = (lastUse.get(key) ?? 0) + length - Date.now();
       if (left > 0) return left;
       lastUse.set(key, Date.now());
+      return 0;
+    },
+    // Milliseconds until the command's API allows another request, or 0
+    // (and the use is recorded). Applies to everyone, admins included.
+    takeGlobal(cmd) {
+      if (!cmd.rateLimit) return 0;
+      const { max, per } = cmd.rateLimit;
+      const now = Date.now();
+      const recent = (globalUses.get(cmd.name) ?? []).filter((at) => now - at < per);
+      globalUses.set(cmd.name, recent);
+      if (recent.length >= max) return recent[0] + per - now;
+      recent.push(now);
       return 0;
     },
     // Makes the person's current wait exactly ms from now (e.g. a shorter

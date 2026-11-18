@@ -11,9 +11,9 @@ export const ITEMS = [
   { id: 'car_keys', name: "Someone's Car Keys", emoji: '🔑', tier: 'trash', price: 200 },
 
   { id: 'common_fish', name: 'Common Fish', emoji: '🐟', tier: 'common', price: 400 },
-  { id: 'sardine', name: 'Sardine', emoji: '🐟', tier: 'common', price: 150 },
-  { id: 'anchovy', name: 'Anchovy', emoji: '🐟', tier: 'common', price: 50 },
-  { id: 'minnow', name: 'Minnow', emoji: '🐟', tier: 'common', price: 25 },
+  { id: 'sardine', name: 'Sardine', emoji: '🐟', tier: 'common', price: 350 },
+  { id: 'anchovy', name: 'Anchovy', emoji: '🐟', tier: 'common', price: 300 },
+  { id: 'minnow', name: 'Minnow', emoji: '🐟', tier: 'common', price: 250 },
   { id: 'tropical_fish', name: 'Tropical Fish', emoji: '🐠', tier: 'common', price: 1200 },
   { id: 'clownfish', name: 'Clownfish', emoji: '🐠', tier: 'common', price: 2500 },
   { id: 'trout', name: 'Trout', emoji: '🐟', tier: 'common', price: 1500 },
@@ -21,19 +21,19 @@ export const ITEMS = [
 
   { id: 'pufferfish', name: 'Pufferfish', emoji: '🐡', tier: 'rare', price: 6000 },
   { id: 'swordfish', name: 'Swordfish', emoji: '🗡️', tier: 'rare', price: 40000 },
-  { id: 'octopus', name: 'Octopus', emoji: '🐙', tier: 'rare', price: 3500 },
-  { id: 'squid', name: 'Squid', emoji: '🦑', tier: 'rare', price: 1200 },
+  { id: 'octopus', name: 'Octopus', emoji: '🐙', tier: 'rare', price: 7500 },
+  { id: 'squid', name: 'Squid', emoji: '🦑', tier: 'rare', price: 4500 },
 
   { id: 'shark', name: 'Shark', emoji: '🦈', tier: 'epic', price: 75000 },
   { id: 'giant_squid', name: 'Giant Squid', emoji: '🦑', tier: 'epic', price: 500000 },
-  { id: 'electric_eel', name: 'Electric Eel', emoji: '⚡', tier: 'epic', price: 25000 },
+  { id: 'electric_eel', name: 'Electric Eel', emoji: '⚡', tier: 'epic', price: 50000 },
 
   { id: 'gold_bar', name: 'Gold Bar (100 g)', emoji: '🥇', tier: 'legendary', price: 1200000 },
-  { id: 'silver_bar', name: 'Silver Bar (1,000 oz)', emoji: '🥈', tier: 'legendary', price: 4600000 },
+  { id: 'silver_bar', name: 'Silver Bar (5 kg)', emoji: '🥈', tier: 'legendary', price: 750000 },
   { id: 'diamond', name: 'Diamond (2 carat)', emoji: '💎', tier: 'legendary', price: 1500000 },
   { id: 'natural_pearl', name: 'Natural Pearl', emoji: '🦪', tier: 'legendary', price: 1000000 },
   { id: 'gold_doubloon', name: 'Spanish Gold Doubloon', emoji: '🪙', tier: 'legendary', price: 1500000 },
-  { id: 'ambergris', name: 'Ambergris (1 kg)', emoji: '🐋', tier: 'legendary', price: 2500000 },
+  { id: 'ambergris', name: 'Ambergris (1 kg)', emoji: '🐋', tier: 'legendary', price: 1700000 },
   { id: 'rolex', name: 'Rolex', emoji: '⌚', tier: 'legendary', price: 1200000 },
 
   { id: 'kraken', name: 'Kraken', emoji: '🐙', tier: 'legendary', price: 100000000, retired: true },

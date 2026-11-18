@@ -3,7 +3,7 @@
 //   2. once a server has bot channels, non-admins are ignored everywhere else
 //   3. ?remote: an admin's commands use another server's data (replies stay here)
 //   4. economy commands refuse guests once, then ignore them for 12 hours
-//   5. cooldowns (admins skip them)
+//   5. cooldowns (admins skip them), then the API's own limit (nobody skips it)
 //   6. the command runs; anything that goes wrong is logged to the console only
 // A command waiting on an answer (awaitAnswer) sees the person's messages first.
 import { formatWait } from './duration.js';
@@ -49,6 +49,8 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
         const wait = cooldowns.take(server.key, cmd, userId);
         if (wait) return await out.reply(cmd.cooldownText?.(formatWait(wait)) ?? `⏳ Slow down! Try \`${prefix}${cmd.name}\` again in ${formatWait(wait)}.`);
       }
+      const busy = cooldowns.takeGlobal(cmd);
+      if (busy) return await out.reply(`⏳ Everyone wants \`${prefix}${cmd.name}\` right now! It's free again in ${formatWait(busy)}.`);
       await cmd.run({
         cmd, prefix, args, message, channel, isAdmin, remote, home, server, db, cooldowns, commands, servers,
         // The person running it, or null while remote: their id on this

@@ -19,17 +19,18 @@ function findItem(query, owned) {
 }
 
 const label = (item, qty) => `${qty} ${item.emoji} ${item.name}`;
+const TIERS = new Set(ITEMS.map((i) => i.tier));
 
 export default {
   name: 'sell',
   category: 'economy',
-  usage: ['<item> [amount|all]', 'all'],
-  description: 'sell from your Safety Deposit Box (selling all keeps legendaries)',
+  usage: ['<item> [amount|all]', '<category>', 'all'],
+  description: `sell from your Safety Deposit Box; categories: ${[...TIERS].join(', ')} (selling all keeps legendaries)`,
   cooldown: 5_000,
   economy: true,
   async run({ prefix, args, user, server, db, reply, notHere }) {
     if (!user) return notHere();
-    const usage = `Usage: \`${prefix}sell <item> [amount|all]\` or \`${prefix}sell all\``;
+    const usage = `Usage: \`${prefix}sell <item> [amount|all]\`, \`${prefix}sell <category>\` or \`${prefix}sell all\``;
     if (!args.length) return reply(usage);
 
     const owned = new Map(db.items(server.key, user.id).map((r) => [r.item, r.qty]));
@@ -48,6 +49,14 @@ export default {
       const kept = sellable.length > lots.length ? ` Legendaries stay in your box: sell those by name.` : '';
       if (!lots.length) return reply(`Nothing to sell.${kept}`);
       return finish(lots, kept);
+    }
+
+    // A whole category (tier) at once, legendary included since it's asked for by name.
+    const tier = args.length === 1 && args[0].toLowerCase();
+    if (TIERS.has(tier)) {
+      const lots = [...owned].map(([id, qty]) => ({ item: itemById.get(id), qty })).filter((l) => l.item?.tier === tier && !l.item.retired);
+      if (!lots.length) return reply(`You don't have any ${tier} items.`);
+      return finish(lots);
     }
 
     const last = args.at(-1).toLowerCase();
