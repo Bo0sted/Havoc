@@ -6,7 +6,9 @@ const order = new Map(ITEMS.map((item, i) => [item.id, i]));
 export default {
   name: 'money',
   aliases: ['bank'],
-  description: 'your money and Safety Deposit Box (or someone else\'s: money @user)',
+  category: 'economy',
+  usage: '[@user]',
+  description: 'your money and Safety Deposit Box, or someone else\'s',
   cooldown: 5_000,
   economy: true,
   async run({ args, user, server, db, findMember, reply, notHere }) {

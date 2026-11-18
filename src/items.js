@@ -1,23 +1,23 @@
 // Everything that can end up in a Safety Deposit Box. `price` is what it
-// sells for in cents (roughly what the whole fish fetches in the US today;
-// the legendaries are priced for fun), or null when it can't be sold.
-// Ids are stored in the database, so never rename one.
+// sells for in cents: roughly what it fetches in the US today, trash is junk
+// shop money, and legendaries are real valuables sized to beat every epic.
+// Ids are stored in the database, so never rename one. `retired` items can't
+// be caught or sold any more but stay in people's boxes.
 export const ITEMS = [
-  { id: 'old_boot', name: 'Old Boot', emoji: '🥾', tier: 'trash', price: null },
-  { id: 'soggy_sock', name: 'Soggy Sock', emoji: '🧦', tier: 'trash', price: null },
-  { id: 'tin_can', name: 'Tin Can', emoji: '🥫', tier: 'trash', price: null },
-  { id: 'seaweed', name: 'Seaweed', emoji: '🌿', tier: 'trash', price: null },
-  { id: 'car_keys', name: "Someone's Car Keys", emoji: '🔑', tier: 'trash', price: null },
+  { id: 'old_boot', name: 'Old Boot', emoji: '🥾', tier: 'trash', price: 150 },
+  { id: 'soggy_sock', name: 'Soggy Sock', emoji: '🧦', tier: 'trash', price: 75 },
+  { id: 'tin_can', name: 'Tin Can', emoji: '🥫', tier: 'trash', price: 100 },
+  { id: 'seaweed', name: 'Seaweed', emoji: '🌿', tier: 'trash', price: 50 },
+  { id: 'car_keys', name: "Someone's Car Keys", emoji: '🔑', tier: 'trash', price: 200 },
 
   { id: 'common_fish', name: 'Common Fish', emoji: '🐟', tier: 'common', price: 400 },
   { id: 'sardine', name: 'Sardine', emoji: '🐟', tier: 'common', price: 150 },
   { id: 'anchovy', name: 'Anchovy', emoji: '🐟', tier: 'common', price: 50 },
   { id: 'minnow', name: 'Minnow', emoji: '🐟', tier: 'common', price: 25 },
-
-  { id: 'tropical_fish', name: 'Tropical Fish', emoji: '🐠', tier: 'uncommon', price: 1200 },
-  { id: 'clownfish', name: 'Clownfish', emoji: '🐠', tier: 'uncommon', price: 2500 },
-  { id: 'trout', name: 'Trout', emoji: '🐟', tier: 'uncommon', price: 1500 },
-  { id: 'salmon', name: 'Salmon', emoji: '🐟', tier: 'uncommon', price: 4000 },
+  { id: 'tropical_fish', name: 'Tropical Fish', emoji: '🐠', tier: 'common', price: 1200 },
+  { id: 'clownfish', name: 'Clownfish', emoji: '🐠', tier: 'common', price: 2500 },
+  { id: 'trout', name: 'Trout', emoji: '🐟', tier: 'common', price: 1500 },
+  { id: 'salmon', name: 'Salmon', emoji: '🐟', tier: 'common', price: 4000 },
 
   { id: 'pufferfish', name: 'Pufferfish', emoji: '🐡', tier: 'rare', price: 6000 },
   { id: 'swordfish', name: 'Swordfish', emoji: '🗡️', tier: 'rare', price: 40000 },
@@ -28,10 +28,18 @@ export const ITEMS = [
   { id: 'giant_squid', name: 'Giant Squid', emoji: '🦑', tier: 'epic', price: 500000 },
   { id: 'electric_eel', name: 'Electric Eel', emoji: '⚡', tier: 'epic', price: 25000 },
 
-  { id: 'kraken', name: 'Kraken', emoji: '🐙', tier: 'legendary', price: 100000000 },
-  { id: 'golden_fish', name: 'Golden Fish', emoji: '🌟', tier: 'legendary', price: 10000000 },
-  { id: 'leviathan', name: 'Leviathan', emoji: '🐋', tier: 'legendary', price: 250000000 },
-  { id: 'dragon', name: 'Literally a Dragon', emoji: '🐉', tier: 'legendary', price: 1000000000 },
+  { id: 'gold_bar', name: 'Gold Bar (100 g)', emoji: '🥇', tier: 'legendary', price: 1200000 },
+  { id: 'silver_bar', name: 'Silver Bar (1,000 oz)', emoji: '🥈', tier: 'legendary', price: 4600000 },
+  { id: 'diamond', name: 'Diamond (2 carat)', emoji: '💎', tier: 'legendary', price: 1500000 },
+  { id: 'natural_pearl', name: 'Natural Pearl', emoji: '🦪', tier: 'legendary', price: 1000000 },
+  { id: 'gold_doubloon', name: 'Spanish Gold Doubloon', emoji: '🪙', tier: 'legendary', price: 1500000 },
+  { id: 'ambergris', name: 'Ambergris (1 kg)', emoji: '🐋', tier: 'legendary', price: 2500000 },
+  { id: 'rolex', name: 'Rolex', emoji: '⌚', tier: 'legendary', price: 1200000 },
+
+  { id: 'kraken', name: 'Kraken', emoji: '🐙', tier: 'legendary', price: 100000000, retired: true },
+  { id: 'golden_fish', name: 'Golden Fish', emoji: '🌟', tier: 'legendary', price: 10000000, retired: true },
+  { id: 'leviathan', name: 'Leviathan', emoji: '🐋', tier: 'legendary', price: 250000000, retired: true },
+  { id: 'dragon', name: 'Literally a Dragon', emoji: '🐉', tier: 'legendary', price: 1000000000, retired: true },
 ];
 
 export const itemById = new Map(ITEMS.map((i) => [i.id, i]));

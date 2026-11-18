@@ -1,6 +1,7 @@
 export default {
   name: 'remote',
-  description: '`remote <server>` runs your commands as if on that server; `remote` alone comes back',
+  usage: ['<server>', ''],
+  description: 'run your commands as if on another server; alone, come back',
   admin: true,
   async run({ prefix, args, home, servers, remotes, reply }) {
     if (!args.length) {

@@ -2,13 +2,12 @@ import { ITEMS } from '../items.js';
 
 // How often each kind of catch comes up (weights, not percentages).
 const TIERS = [
-  { tier: 'nothing', weight: 18 },
-  { tier: 'trash', weight: 16 },
-  { tier: 'common', weight: 34 },
-  { tier: 'uncommon', weight: 18 },
-  { tier: 'rare', weight: 9 },
-  { tier: 'epic', weight: 4 },
-  { tier: 'legendary', weight: 1 },
+  { tier: 'nothing', weight: 12 },
+  { tier: 'trash', weight: 14 },
+  { tier: 'common', weight: 44 },
+  { tier: 'rare', weight: 18 },
+  { tier: 'epic', weight: 9 },
+  { tier: 'legendary', weight: 3 },
 ];
 const TOTAL = TIERS.reduce((sum, t) => sum + t.weight, 0);
 
@@ -23,12 +22,13 @@ const pick = (list) => list[Math.floor(Math.random() * list.length)];
 function roll() {
   let n = Math.random() * TOTAL;
   const { tier } = TIERS.find((t) => (n -= t.weight) < 0) ?? TIERS[0];
-  return tier === 'nothing' ? null : pick(ITEMS.filter((i) => i.tier === tier));
+  return tier === 'nothing' ? null : pick(ITEMS.filter((i) => i.tier === tier && !i.retired));
 }
 
 export default {
   name: 'fish',
-  description: 'go fishing (catches go in your Safety Deposit Box)',
+  category: 'economy',
+  description: 'go fishing; catches go in your Safety Deposit Box',
   cooldown: 20_000,
   economy: true,
   cooldownText: (wait) => `🎣 You're still untangling your line. Try again in ${wait}.`,

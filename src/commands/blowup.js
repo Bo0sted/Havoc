@@ -39,7 +39,9 @@ async function loadImage(haven, path) {
 export default {
   name: 'blowup',
   aliases: ['explode', 'boom'],
-  description: 'blow up a profile picture or an attached image: blowup @user',
+  category: 'fun',
+  usage: '[@user]',
+  description: 'blow up a profile picture, or an image you attach',
   cooldown: 15_000,
   cooldownText: (wait) => `💣 Still reloading the TNT. Try again in ${wait}.`,
   async run({ prefix, message, user, home, server, findMember, reply, replyImage, notHere }) {

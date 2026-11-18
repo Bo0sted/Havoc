@@ -37,7 +37,23 @@ export function openDb(path) {
     cents: q('SELECT cents FROM wallets WHERE server = ? AND user_id = ?'),
     items: q('SELECT item, qty FROM items WHERE server = ? AND user_id = ? AND qty > 0'),
     addItem: q('INSERT INTO items (server, user_id, item, qty) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET qty = qty + excluded.qty'),
+    takeItem: q('UPDATE items SET qty = qty - ? WHERE server = ? AND user_id = ? AND item = ? AND qty >= ?'),
+    addCents: q('INSERT INTO wallets (server, user_id, cents) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET cents = cents + excluded.cents'),
   };
+
+  // Runs fn inside one transaction: everything in it lands, or nothing does
+  // (when it throws or returns false).
+  function atomic(fn) {
+    db.exec('BEGIN');
+    try {
+      const result = fn();
+      db.exec(result === false ? 'ROLLBACK' : 'COMMIT');
+      return result;
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  }
 
   return {
     overrides: (server) => new Map(s.overrides.all(server).map((r) => [r.command, r.ms])),
@@ -52,6 +68,15 @@ export function openDb(path) {
     cents: (server, userId) => s.cents.get(server, userId)?.cents ?? 0,
     items: (server, userId) => s.items.all(server, userId),
     addItem: (server, userId, item, qty = 1) => s.addItem.run(server, userId, item, qty),
+    // Removes each { item, qty } from the box and pays `cents` for the lot.
+    // False (and nothing changes) when any of them isn't there in full.
+    sell: (server, userId, lots, cents) => atomic(() => {
+      for (const { item, qty } of lots) {
+        if (s.takeItem.run(qty, server, userId, item, qty).changes === 0) return false;
+      }
+      s.addCents.run(server, userId, cents);
+      return true;
+    }),
 
     close: () => db.close(),
   };

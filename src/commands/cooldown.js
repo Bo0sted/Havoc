@@ -2,7 +2,8 @@ import { parseDuration, formatDuration } from '../duration.js';
 
 export default {
   name: 'cooldown',
-  description: 'list cooldowns; `cooldown <command> <X><sec|min|hr>` overrides one here, `cooldown reset <command>` removes it',
+  usage: ['', '<command> <X><sec|min|hr>', 'reset <command>'],
+  description: 'list cooldowns here, override one, or reset it',
   admin: true,
   async run({ prefix, args, server, commands, db, cooldowns, reply }) {
     const find = (word = '') => commands.find((c) => [c.name, ...(c.aliases ?? [])].includes(word.toLowerCase()));

@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 export default {
   name: 'cat',
+  category: 'fun',
   description: 'a random cat picture',
   cooldown: 5_000,
   cooldownText: (wait) => `🐱 The cats are resting, try again in ${wait}.`,
