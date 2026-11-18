@@ -5,6 +5,7 @@
 //   4. economy commands refuse guests once, then ignore them for 12 hours
 //   5. cooldowns (admins skip them)
 //   6. the command runs; anything that goes wrong is logged to the console only
+// A command waiting on an answer (awaitAnswer) sees the person's messages first.
 import { formatWait } from './duration.js';
 
 const GUEST_BLOCK = 12 * 3_600_000;
@@ -19,8 +20,14 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
   const remotes = new Map();
   const remoteKey = (home, userId) => `${home.key}\n${userId}`;
 
+  // Someone's answer in one channel/thread → the check waiting for it,
+  // which returns true when it takes the message.
+  const waiting = new Map();
+  const answerKey = (home, channelCode, threadId, userId) => `${home.key}\n${channelCode}\n${threadId ?? ''}\n${userId}`;
+
   async function handle(home, { channelCode, message, threadId }) {
     const text = (message.content || '').trim();
+    if (waiting.get(answerKey(home, channelCode, threadId, message.user_id))?.(text)) return;
     if (!text.toLowerCase().startsWith(prefix.toLowerCase())) return;
     const [word, ...args] = text.slice(prefix.length).trim().split(/\s+/);
     const cmd = byName.get((word || '').toLowerCase());
@@ -43,11 +50,19 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
         if (wait) return await out.reply(cmd.cooldownText?.(formatWait(wait)) ?? `⏳ Slow down! Try \`${prefix}${cmd.name}\` again in ${formatWait(wait)}.`);
       }
       await cmd.run({
-        prefix, args, message, channel, isAdmin, remote, home, server, db, cooldowns, commands, servers,
+        cmd, prefix, args, message, channel, isAdmin, remote, home, server, db, cooldowns, commands, servers,
         // The person running it, or null while remote: their id on this
         // server means someone else (or no one) on the other one.
         user: remote ? null : { id: userId, name: message.username, avatar: message.avatar },
         findMember: (name) => server.client.findMember(name, remote ? undefined : channelCode),
+        // Resolves with this person's next message here that `accepts`
+        // takes, or null after `ms`. Other messages go on as usual.
+        awaitAnswer: (accepts, ms) => new Promise((resolve) => {
+          const key = answerKey(home, channelCode, threadId, userId);
+          const finish = (value) => { clearTimeout(timer); waiting.delete(key); resolve(value); };
+          const timer = setTimeout(() => finish(null), ms);
+          waiting.set(key, (answer) => accepts(answer) && (finish(answer), true));
+        }),
         remotes: { get: () => remotes.get(remoteKey(home, userId)) ?? null, set: (s) => remotes.set(remoteKey(home, userId), s), clear: () => remotes.delete(remoteKey(home, userId)) },
         ...out,
       });
@@ -86,6 +101,16 @@ function output(home, { channelCode, message, threadId }, remoteName, prefix) {
     reply: async (content) => {
       noted = true;
       home.client.send(channelCode, note + content, where);
+    },
+    // A reply that can be changed later: resolves with edit(content). If
+    // the edit can't happen, the new text is sent as a reply to the command.
+    replyEditable: async (content) => {
+      noted = true;
+      const id = await home.client.sendForEdit(channelCode, note + content, where);
+      return async (next) => {
+        if (id && (await home.client.edit(channelCode, id, note + next))) return;
+        home.client.send(channelCode, note + next, where);
+      };
     },
     replyImage: async (buffer, filename, mime) => {
       if (note && !noted) home.client.send(channelCode, note.trim(), where);

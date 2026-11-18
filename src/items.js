@@ -44,5 +44,12 @@ export const ITEMS = [
 
 export const itemById = new Map(ITEMS.map((i) => [i.id, i]));
 
+// What a stack of an item is worth in cents. Retired (and unknown) items
+// can't be sold, so they're worth nothing.
+export function valueOf(id, qty) {
+  const item = itemById.get(id);
+  return item && !item.retired ? item.price * qty : 0;
+}
+
 export const formatMoney = (cents) =>
   (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });

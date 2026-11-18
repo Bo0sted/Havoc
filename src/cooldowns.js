@@ -21,6 +21,11 @@ export function createCooldowns(db) {
       lastUse.set(key, Date.now());
       return 0;
     },
+    // Makes the person's current wait exactly ms from now (e.g. a shorter
+    // cooldown after a win).
+    setRemaining(server, cmd, userId, ms) {
+      lastUse.set(`${server}\n${cmd.name}\n${userId}`, Date.now() + ms - lengthOf(server, cmd));
+    },
     prune(now = Date.now()) {
       for (const [key, at] of lastUse) if (now - at > DAY) lastUse.delete(key);
     },

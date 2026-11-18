@@ -1,4 +1,4 @@
-import { itemById, formatMoney } from '../items.js';
+import { valueOf, formatMoney } from '../items.js';
 
 export default {
   name: 'gdp',
@@ -8,11 +8,7 @@ export default {
   economy: true,
   async run({ server, db, reply }) {
     const cash = db.totalCents(server.key);
-    // Items count at their sell price; retired ones can't be sold, so they're worth nothing.
-    const goods = db.totalItems(server.key).reduce((sum, { item, qty }) => {
-      const it = itemById.get(item);
-      return it && !it.retired ? sum + it.price * qty : sum;
-    }, 0);
+    const goods = db.totalItems(server.key).reduce((sum, { item, qty }) => sum + valueOf(item, qty), 0);
     return reply(`📈 **${server.name}**'s GDP is **${formatMoney(cash + goods)}** (${formatMoney(cash)} in cash, ${formatMoney(goods)} in Safety Deposit Boxes)`);
   },
 };

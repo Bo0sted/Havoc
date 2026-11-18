@@ -116,6 +116,8 @@ export class HavenClient extends EventEmitter {
       this.incoming(channelCode, message, threadId);
     });
 
+    this.socket.on('message-edited', (e) => this.emit('edited', e?.messageId));
+
     // Replies inside a forum topic, or in a thread on an ordinary message.
     this.socket.on('new-thread-message', ({ channelCode, parentId, message }) => {
       if (!message || !parentId) return;
@@ -125,7 +127,9 @@ export class HavenClient extends EventEmitter {
 
   incoming(channelCode, message, threadId) {
     this.remember(message.user_id, message.username, message.avatar);
-    if (message.user_id === this.user.id || message.is_webhook) return;
+    // Havoc's own messages are only watched for their ids (see sendForEdit).
+    if (message.user_id === this.user.id) return this.emit('own-message', { channelCode, message });
+    if (message.is_webhook) return;
     // Only server channels: DMs and group DMs are ignored. A channel not
     // in the list yet might be a new DM, so it is skipped and the list
     // refreshed rather than guessed at.
@@ -143,6 +147,30 @@ export class HavenClient extends EventEmitter {
     } else {
       this.socket.emit('send-message', { code: channelCode, silent: true, ...fields, ...(replyTo && { replyTo }) });
     }
+  }
+
+  // Sends a message and resolves with its id once Haven echoes it back
+  // (null if it doesn't within a few seconds), so it can be edited later.
+  sendForEdit(channelCode, content, opts) {
+    return new Promise((resolve) => {
+      const done = (id) => { clearTimeout(timer); this.off('own-message', onOwn); resolve(id); };
+      const onOwn = (e) => { if (e.channelCode === channelCode && e.message.content === content) done(e.message.id); };
+      const timer = setTimeout(() => done(null), 5000);
+      this.on('own-message', onOwn);
+      this.send(channelCode, content, opts);
+    });
+  }
+
+  // Edits one of Havoc's messages. Resolves true once Haven confirms it,
+  // false if it doesn't (e.g. the server took away editing own messages).
+  edit(channelCode, messageId, content) {
+    return new Promise((resolve) => {
+      const done = (ok) => { clearTimeout(timer); this.off('edited', onEdited); resolve(ok); };
+      const onEdited = (id) => { if (id === messageId) done(true); };
+      const timer = setTimeout(() => done(false), 3000);
+      this.on('edited', onEdited);
+      this.socket.emit('edit-message', { channelCode, messageId, content });
+    });
   }
 
   // avatar: undefined = not known yet, null = has none.
@@ -209,6 +237,16 @@ export class HavenClient extends EventEmitter {
       await this.ask('get-user-profile', { userId: member.id }, 'profile', (id) => id === member.id);
     }
     return this.members.get(key) ?? null;
+  }
+
+  // Display names for user ids, fetching member lists channel by channel
+  // until everyone is known. Ids nobody can find map to null.
+  async namesOf(ids) {
+    for (const code of this.serverChannels.keys()) {
+      if (ids.every((id) => this.members.has(id))) break;
+      await this.ask('get-channel-members', { code }, 'channel-members', (c) => c === code);
+    }
+    return new Map(ids.map((id) => [id, this.members.get(id)?.name ?? null]));
   }
 
   // Whether an account is a guest. Ids are never reused, so once known the

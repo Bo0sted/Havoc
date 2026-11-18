@@ -19,6 +19,14 @@ const SCHEMA = `
     server TEXT NOT NULL, channel_id INTEGER NOT NULL,
     PRIMARY KEY (server, channel_id)
   );
+  CREATE TABLE IF NOT EXISTS dailies (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, last INTEGER NOT NULL, streak INTEGER NOT NULL,
+    PRIMARY KEY (server, user_id)
+  );
+  CREATE TABLE IF NOT EXISTS lottery_streaks (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, streak INTEGER NOT NULL,
+    PRIMARY KEY (server, user_id)
+  );
   CREATE TABLE IF NOT EXISTS items (
     server TEXT NOT NULL, user_id INTEGER NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL,
     PRIMARY KEY (server, user_id, item)
@@ -46,6 +54,12 @@ export function openDb(path) {
     removeBotChannel: q('DELETE FROM bot_channels WHERE server = ? AND channel_id = ?'),
     totalCents: q('SELECT COALESCE(SUM(cents), 0) AS cents FROM wallets WHERE server = ?'),
     totalItems: q('SELECT item, SUM(qty) AS qty FROM items WHERE server = ? AND qty > 0 GROUP BY item'),
+    wallets: q('SELECT user_id, cents FROM wallets WHERE server = ?'),
+    allItems: q('SELECT user_id, item, qty FROM items WHERE server = ? AND qty > 0'),
+    daily: q('SELECT last, streak FROM dailies WHERE server = ? AND user_id = ?'),
+    setDaily: q('INSERT INTO dailies (server, user_id, last, streak) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET last = excluded.last, streak = excluded.streak'),
+    lotteryStreak: q('SELECT streak FROM lottery_streaks WHERE server = ? AND user_id = ?'),
+    setLotteryStreak: q('INSERT INTO lottery_streaks (server, user_id, streak) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET streak = excluded.streak'),
     takeItem: q('UPDATE items SET qty = qty - ? WHERE server = ? AND user_id = ? AND item = ? AND qty >= ?'),
     addCents: q('INSERT INTO wallets (server, user_id, cents) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET cents = cents + excluded.cents'),
   };
@@ -84,6 +98,22 @@ export function openDb(path) {
     // Everyone's money, and every item held, on one server.
     totalCents: (server) => s.totalCents.get(server).cents,
     totalItems: (server) => s.totalItems.all(server),
+    // Every wallet and every held item on one server, for rankings.
+    wallets: (server) => s.wallets.all(server),
+    allItems: (server) => s.allItems.all(server),
+    // The last daily claim ({ last, streak }), or null if never claimed.
+    daily: (server, userId) => s.daily.get(server, userId) ?? null,
+    claimDaily: (server, userId, at, streak, cents) => atomic(() => {
+      s.setDaily.run(server, userId, at, streak);
+      s.addCents.run(server, userId, cents);
+    }),
+    // Wins in a row at ?lottery; a win pays and extends it, a loss ends it.
+    lotteryStreak: (server, userId) => s.lotteryStreak.get(server, userId)?.streak ?? 0,
+    lotteryWin: (server, userId, streak, cents) => atomic(() => {
+      s.setLotteryStreak.run(server, userId, streak);
+      s.addCents.run(server, userId, cents);
+    }),
+    lotteryLoss: (server, userId) => s.setLotteryStreak.run(server, userId, 0),
     addItem: (server, userId, item, qty = 1) => s.addItem.run(server, userId, item, qty),
     // Removes each { item, qty } from the box and pays `cents` for the lot.
     // False (and nothing changes) when any of them isn't there in full.
