@@ -1,5 +1,5 @@
 import { formatMoney } from '../items.js';
-import { KINDS, TOOLS, PROMOS, toolById, rankOf, findTool, wear } from '../tools.js';
+import { KINDS, TOOLS, PROMOS, toolById, rankOf, wear, matchTools } from '../tools.js';
 import { matchAnswer } from '../answers.js';
 
 // Trading in a tool when upgrading is worth half of what's left of it.
@@ -9,8 +9,8 @@ const tradeIn = (tool, uses) => Math.round(TRADE_IN * tool.price * (Math.max(0, 
 export default {
   name: 'shop',
   category: 'economy',
-  usage: ['', '<store> <item>', 'promo <name>'],
-  description: 'fishing poles, pickaxes and your promos; buy with `shop <store> <item>`',
+  usage: ['', 'buy <number|name>', 'promo <name>'],
+  description: 'fishing poles, pickaxes and your promos; buy with `shop buy <number>` (or the item\'s name)',
   cooldown: 5_000,
   economy: true,
   // Browsing has its own cooldown, so looking never holds up buying.
@@ -18,32 +18,52 @@ export default {
   async run({ prefix, args, user, server, db, reply, notHere }) {
     if (!args.length) return reply(list(prefix, user, server, db));
     if (!user) return notHere();
-    if (args[0].toLowerCase() === 'promo') {
+    const sub = args[0].toLowerCase();
+    if (sub === 'buy') {
+      if (args.length === 1) return reply(`Usage: \`${prefix}shop buy <number|name>\` (see \`${prefix}shop\` for the numbers)`);
+      return buy(args.slice(1).join(' '), { prefix, user, server, db, reply });
+    }
+    if (sub === 'promo') {
       if (args.length === 1) return reply(`Usage: \`${prefix}shop promo <name>\``);
       return redeem(args.slice(1).join(' '), { user, server, db, reply });
     }
-    return buy(args.join(' '), { user, server, db, reply });
+    return reply(`Usage: \`${prefix}shop buy <number>\` (see \`${prefix}shop\` for the numbers)`);
   },
 };
+
+// Items are numbered 1, 2, 3… straight down the list (poles, then pickaxes).
+const numberOf = (tool) => TOOLS.indexOf(tool) + 1;
 
 function list(prefix, user, server, db) {
   const section = (kind, title) => [
     `${KINDS[kind].emoji} **${title}**`,
     ...TOOLS.filter((t) => t.kind === kind)
-      .map((t) => `\`${prefix}shop ${t.name.toLowerCase()}\` ${formatMoney(t.price)} · up to ${t.max} ${KINDS[kind].unit}`),
+      .map((t) => `**${numberOf(t)}.** ${t.name} · ${formatMoney(t.price)} · up to ${t.max} ${KINDS[kind].unit}`),
   ];
   const promos = user ? PROMOS.filter((p) => !db.promoClaimed(server.key, user.id, p.id)) : [];
   return [
-    `**Shop** (buy with \`${prefix}shop <store> <item>\`)`,
+    `**Shop** (buy with \`${prefix}shop buy <number>\`, e.g. \`${prefix}shop buy 1\`)`,
     ...section('pole', 'Fishing poles'),
     ...section('pickaxe', 'Pickaxes'),
     ...(promos.length ? ['🎁 **Your promos**', ...promos.map((p) => `\`${prefix}shop promo ${p.id}\` ${p.label}`)] : []),
   ].join('\n');
 }
 
-function buy(text, { user, server, db, reply }) {
-  const tool = findTool(text);
-  if (!tool) return reply(`There's no item called **${text}** in the shop.`);
+// By number, or by name. A name that fits several items (a store selling
+// more than one thing) asks which one instead of guessing.
+function buy(text, { prefix, user, server, db, reply }) {
+  let tool;
+  if (/^\d+$/.test(text)) {
+    tool = TOOLS[Number(text) - 1];
+    if (!tool) return reply(`There's no item number ${Number(text)} in the shop.`);
+  } else {
+    const found = matchTools(text);
+    if (!found.length) return reply(`There's no item called **${text}** in the shop.`);
+    if (found.length > 1) {
+      return reply(`Which one? ${found.map((t) => `**${numberOf(t)}.** ${t.name}`).join(', ')} (buy with \`${prefix}shop buy <number>\`)`);
+    }
+    [tool] = found;
+  }
   const { noun } = KINDS[tool.kind];
   const held = db.tool(server.key, user.id, tool.kind);
   const current = held && toolById.get(held.item);

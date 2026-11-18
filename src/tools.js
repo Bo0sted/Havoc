@@ -45,16 +45,23 @@ export const PROMOS = [
 const key = (text) => text.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
 const squash = (text) => key(text).replace(/ /g, '');
 
-// The tool a typed name means ("walmart fishing pole", "walmart", "dicks
-// fishing pole", "bass pro shop pole"), or null: the full name, then a
-// name containing every typed word, then a near-miss spelling.
-export function findTool(text) {
+// The tools a typed name could mean ("walmart fishing pole", "walmart",
+// "dicks fishing pole", "bass pro shop pole"): the full name, else every
+// name containing all the typed words, else one near-miss spelling. More
+// than one result means the name was ambiguous.
+export function matchTools(text) {
   const words = key(text).split(' ').filter(Boolean);
-  if (!words.length) return null;
+  if (!words.length) return [];
   const exact = TOOLS.find((t) => squash(t.name) === words.join(''));
-  if (exact) return exact;
+  if (exact) return [exact];
   const containing = TOOLS.filter((t) => words.every((w) => squash(t.name).includes(w)));
-  if (containing.length === 1) return containing[0];
+  if (containing.length) return containing;
   const typo = matchAnswer(words.join(''), TOOLS.map((t) => squash(t.name)));
-  return typo ? TOOLS.find((t) => squash(t.name) === typo) : null;
+  return typo ? [TOOLS.find((t) => squash(t.name) === typo)] : [];
+}
+
+// The one tool a name means, or null if none or ambiguous.
+export function findTool(text) {
+  const found = matchTools(text);
+  return found.length === 1 ? found[0] : null;
 }
