@@ -7,29 +7,11 @@
 //   6. the command runs; anything that goes wrong is logged to the console only
 // A command waiting on an answer (awaitAnswer) sees the person's messages first.
 import { formatWait } from './duration.js';
+import { chunks } from './chunks.js';
 
 const GUEST_BLOCK = 12 * 3_600_000;
 const GUEST_REPLY = 'Guest accounts are unable to use economy commands';
 const FAILED_REPLY = 'Something went wrong (and not the fun kind of explosion).';
-// Haven refuses messages over 2000 characters; longer replies are split.
-const MAX_CHARS = 1900;
-
-// Splits text into pieces under MAX_CHARS at line breaks (blank lines kept),
-// cutting a single over-long line only when it has to. Never sends an empty piece.
-function chunks(text) {
-  const out = [];
-  let current = null;
-  const flush = () => { if (current?.trim()) out.push(current); current = null; };
-  for (const line of text.split('\n')) {
-    for (let i = 0; i === 0 || i < line.length; i += MAX_CHARS) {
-      const part = line.slice(i, i + MAX_CHARS);
-      if (current !== null && current.length + 1 + part.length > MAX_CHARS) flush();
-      current = current === null ? part : `${current}\n${part}`;
-    }
-  }
-  flush();
-  return out;
-}
 
 export function createRouter({ prefix, commands, servers, db, cooldowns }) {
   const byName = new Map();
@@ -131,13 +113,14 @@ function output(home, { channelCode, message, threadId }, remoteName, prefix) {
       for (const piece of chunks(note + content)) home.client.send(channelCode, piece, where);
     },
     // A reply that can be changed later: resolves with edit(content). If
-    // the edit can't happen, the new text is sent as a reply to the command.
+    // the edit can't happen, the new text is sent as a reply to the command,
+    // unless it's only progress ({ quiet: true }), which is dropped instead.
     replyEditable: async (content) => {
       noted = true;
       const id = await home.client.sendForEdit(channelCode, note + content, where);
-      return async (next) => {
+      return async (next, { quiet = false } = {}) => {
         if (id && (await home.client.edit(channelCode, id, note + next))) return;
-        home.client.send(channelCode, note + next, where);
+        if (!quiet) home.client.send(channelCode, note + next, where);
       };
     },
     replyImage: async (buffer, filename, mime) => {

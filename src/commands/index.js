@@ -24,5 +24,8 @@ import id from './id.js';
 import cooldown from './cooldown.js';
 import botchannel from './botchannel.js';
 import remote from './remote.js';
+import pfp from './pfp.js';
+import status from './status.js';
+import consoleCommand from './console.js';
 
-export default [help, cat, dog, fox, duck, funfact, dadjoke, advice, pokemon, fish, mine, daily, lottery, hangman, money, sell, shop, top, gdp, bet, blowup, id, cooldown, botchannel, remote];
+export default [help, cat, dog, fox, duck, funfact, dadjoke, advice, pokemon, fish, mine, daily, lottery, hangman, money, sell, shop, top, gdp, bet, blowup, id, cooldown, botchannel, remote, pfp, status, consoleCommand];

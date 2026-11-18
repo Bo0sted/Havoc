@@ -1,26 +1,10 @@
 import sharp from 'sharp';
 import { explodeAvatar, MAX_PIXELS } from '../explode.js';
 import { findTarget } from '../members.js';
+import { attachmentsOf } from '../attachments.js';
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const TOO_BIG = 'Image too big';
-
-// Haven writes each attachment into the message text on its own line:
-//   /uploads/abc.png                        a picture
-//   spoiler-img:/uploads/abc.png            a spoilered picture
-//   [file:name.zip](/uploads/abc.zip|2 MB)  any other file
-const ATTACHMENT_RE = /^(?:spoiler-img:)?(\/uploads\/\S+)$|^\[file:[^\]]*\]\((\/uploads\/[^|)]+)(?:\|[^)]*)?\)$/;
-
-function attachmentsOf(content) {
-  const paths = [];
-  const text = [];
-  for (const line of String(content || '').split('\n')) {
-    const m = ATTACHMENT_RE.exec(line.trim());
-    if (m) paths.push(m[1] || m[2]);
-    else text.push(line);
-  }
-  return { paths, text: text.join(' ') };
-}
 
 // Downloads an attachment and returns it if sharp can read it as a picture
 // (png, jpeg, gif, webp, avif, tiff...); anything else gives null, and a

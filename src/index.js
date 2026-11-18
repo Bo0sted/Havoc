@@ -1,3 +1,5 @@
+// First, so ?console sees everything printed from here on.
+import './console.js';
 import { HavenClient } from './haven.js';
 import { loadServers } from './config.js';
 import { openDb } from './db.js';

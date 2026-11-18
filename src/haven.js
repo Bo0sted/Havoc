@@ -5,6 +5,14 @@ import { EventEmitter } from 'node:events';
 import { io } from 'socket.io-client';
 
 const EULA_VERSION = '2.0';
+// Haven drops an ordinary account's messages past 10 per 10 seconds, so
+// posts wait their turn instead: at most SEND_MAX per SEND_WINDOW, with a
+// little slack for messages that reach the server late.
+const SEND_MAX = 9;
+const SEND_WINDOW = 10_250;
+
+// A failure whose reason is fine to show in chat.
+const refusal = (reason) => Object.assign(new Error(reason), { reason });
 
 export class HavenClient extends EventEmitter {
   constructor({ url, username, password }) {
@@ -23,6 +31,10 @@ export class HavenClient extends EventEmitter {
     // which of them are forums.
     this.serverChannels = new Map();
     this.forumChannels = new Set();
+    // Posts waiting to go out, and when the recent ones went.
+    this.outbox = [];
+    this.sentAt = [];
+    this.outboxTimer = null;
   }
 
   async login() {
@@ -117,6 +129,7 @@ export class HavenClient extends EventEmitter {
     });
 
     this.socket.on('message-edited', (e) => this.emit('edited', e?.messageId));
+    this.socket.on('status-updated', (s) => this.emit('status', s));
 
     // Replies inside a forum topic, or in a thread on an ordinary message.
     this.socket.on('new-thread-message', ({ channelCode, parentId, message }) => {
@@ -141,11 +154,34 @@ export class HavenClient extends EventEmitter {
   }
 
   // Posts in the channel, or inside a topic/thread when threadId is set.
+  // Resolves once it has gone out (it may wait its turn, see SEND_MAX).
   post(channelCode, fields, { replyTo, threadId } = {}) {
-    if (threadId) {
-      this.socket.emit('send-thread-message', { parentId: threadId, silent: true, ...fields, ...(replyTo && { replyTo }) });
-    } else {
-      this.socket.emit('send-message', { code: channelCode, silent: true, ...fields, ...(replyTo && { replyTo }) });
+    return new Promise((resolve) => {
+      this.outbox.push(() => {
+        if (threadId) {
+          this.socket.emit('send-thread-message', { parentId: threadId, silent: true, ...fields, ...(replyTo && { replyTo }) });
+        } else {
+          this.socket.emit('send-message', { code: channelCode, silent: true, ...fields, ...(replyTo && { replyTo }) });
+        }
+        resolve();
+      });
+      this.flush();
+    });
+  }
+
+  // Sends queued posts in order while the window has room, then waits for
+  // the oldest one to leave it.
+  flush() {
+    if (this.outboxTimer) return;
+    while (this.outbox.length) {
+      const now = Date.now();
+      this.sentAt = this.sentAt.filter((t) => now - t < SEND_WINDOW);
+      if (this.sentAt.length >= SEND_MAX) {
+        this.outboxTimer = setTimeout(() => { this.outboxTimer = null; this.flush(); }, this.sentAt[0] + SEND_WINDOW - now);
+        return;
+      }
+      this.sentAt.push(now);
+      this.outbox.shift()();
     }
   }
 
@@ -153,15 +189,16 @@ export class HavenClient extends EventEmitter {
   // (null if it doesn't within a few seconds), so it can be edited later.
   sendForEdit(channelCode, content, opts) {
     return new Promise((resolve) => {
+      let timer;
       const done = (id) => { clearTimeout(timer); this.off('own-message', onOwn); resolve(id); };
       // Matched by what it replies to as well, so two identical messages
       // (two people playing at once) never get mixed up.
       const onOwn = ({ channelCode: code, message: m }) => {
         if (code === channelCode && m.content === content && (!opts?.replyTo || m.reply_to === opts.replyTo)) done(m.id);
       };
-      const timer = setTimeout(() => done(null), 5000);
       this.on('own-message', onOwn);
-      this.send(channelCode, content, opts);
+      // The wait starts once it has actually gone out, not while it's queued.
+      this.send(channelCode, content, opts).then(() => { timer = setTimeout(() => done(null), 5000); });
     });
   }
 
@@ -265,7 +302,51 @@ export class HavenClient extends EventEmitter {
   }
 
   send(channelCode, content, opts) {
-    this.post(channelCode, { content }, opts);
+    return this.post(channelCode, { content }, opts);
+  }
+
+  // Sets Havoc's profile picture here. Haven saves it on upload; set-avatar
+  // then shows it to everyone online without a reconnect. Failures carry a
+  // `reason` fit for chat.
+  async setAvatar(buffer, filename, mime) {
+    if (!this.socket?.connected) throw refusal('not connected');
+    const upload = () => {
+      const form = new FormData();
+      form.append('avatar', new Blob([buffer], { type: mime }), filename);
+      return fetch(`${this.url}/api/upload-avatar`, { method: 'POST', headers: { Authorization: `Bearer ${this.token}` }, body: form });
+    };
+    let res;
+    try {
+      res = await upload();
+      // The sign-in expired: sign in again and try once more.
+      if (res.status === 401) {
+        await this.login();
+        res = await upload();
+      }
+    } catch (err) {
+      throw Object.assign(refusal("couldn't reach the server"), { cause: err });
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || !body.url) throw refusal(body.error || `the server refused it (${res.status})`);
+    this.socket.emit('set-avatar', { url: body.url });
+  }
+
+  // Sets the status line under Havoc's name (empty clears it), staying
+  // online. Haven answers with status-updated, or not at all when it refuses
+  // the text (automod), so no answer within a few seconds is a failure.
+  setStatus(statusText) {
+    if (!this.socket?.connected) return Promise.reject(refusal('not connected'));
+    return new Promise((resolve, reject) => {
+      const done = (ok) => {
+        clearTimeout(timer);
+        this.off('status', onStatus);
+        ok ? resolve() : reject(refusal("Haven didn't accept it (its automod may have blocked the text)"));
+      };
+      const onStatus = (s) => { if (s?.statusText === statusText) done(true); };
+      const timer = setTimeout(() => done(false), 5000);
+      this.on('status', onStatus);
+      this.socket.emit('set-status', { status: 'online', statusText });
+    });
   }
 
   // Uploads an image through the same endpoint the web app uses, then posts
@@ -280,6 +361,6 @@ export class HavenClient extends EventEmitter {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.url) throw new Error(`Upload failed (${res.status}): ${body.error || 'no details'}`);
-    this.post(channelCode, { content: body.url, isImage: true }, opts);
+    await this.post(channelCode, { content: body.url, isImage: true }, opts);
   }
 }
