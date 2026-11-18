@@ -1,9 +1,13 @@
-// Everything that can end up in a Safety Deposit Box. `price` is what it
-// sells for in cents: roughly what it fetches in the US today, trash is junk
-// shop money, and legendaries are real valuables sized to beat every epic.
-// Ids are stored in the database, so never rename one. `retired` items can't
-// be caught or sold any more but stay in people's boxes.
-export const ITEMS = [
+// Everything that can end up in a Safety Deposit Box: fishing catches,
+// mining finds and broken tools. `price` is what it sells for in cents:
+// roughly what it fetches in the US today, trash is junk shop money, and
+// every item is worth more than every item in the tier below (broken tools
+// sit outside that ladder in their own tier). Ids are stored in the
+// database, so never rename one. `retired` items can't be caught or sold
+// any more but stay in people's boxes.
+import { TOOLS, KINDS } from './tools.js';
+
+const FISH = [
   { id: 'old_boot', name: 'Old Boot', emoji: '🥾', tier: 'trash', price: 150 },
   { id: 'soggy_sock', name: 'Soggy Sock', emoji: '🧦', tier: 'trash', price: 75 },
   { id: 'tin_can', name: 'Tin Can', emoji: '🥫', tier: 'trash', price: 100 },
@@ -40,6 +44,49 @@ export const ITEMS = [
   { id: 'golden_fish', name: 'Golden Fish', emoji: '🌟', tier: 'legendary', price: 10000000, retired: true },
   { id: 'leviathan', name: 'Leviathan', emoji: '🐋', tier: 'legendary', price: 250000000, retired: true },
   { id: 'dragon', name: 'Literally a Dragon', emoji: '🐉', tier: 'legendary', price: 1000000000, retired: true },
+];
+
+const MINE = [
+  { id: 'pebble', name: 'Pebble', emoji: '🪨', tier: 'trash', price: 50 },
+  { id: 'dirt_clump', name: 'Dirt Clump', emoji: '🟫', tier: 'trash', price: 75 },
+  { id: 'rusty_nail', name: 'Rusty Nail', emoji: '🔩', tier: 'trash', price: 100 },
+  { id: 'old_lunchbox', name: 'Old Lunchbox', emoji: '🍱', tier: 'trash', price: 150 },
+  { id: 'lost_hard_hat', name: 'Lost Hard Hat', emoji: '⛑️', tier: 'trash', price: 200 },
+
+  { id: 'coal', name: 'Coal', emoji: '⚫', tier: 'common', price: 250 },
+  { id: 'iron_ore', name: 'Iron Ore', emoji: '⚙️', tier: 'common', price: 300 },
+  { id: 'lead_ore', name: 'Lead Ore', emoji: '🔘', tier: 'common', price: 350 },
+  { id: 'tin_ore', name: 'Tin Ore', emoji: '⚪', tier: 'common', price: 400 },
+  { id: 'copper_ore', name: 'Copper Ore', emoji: '🟠', tier: 'common', price: 600 },
+  { id: 'quartz_crystal', name: 'Quartz Crystal', emoji: '🔮', tier: 'common', price: 1000 },
+  { id: 'pyrite', name: "Pyrite (Fool's Gold)", emoji: '🟡', tier: 'common', price: 1500 },
+  { id: 'obsidian', name: 'Obsidian', emoji: '🖤', tier: 'common', price: 2500 },
+
+  { id: 'silver_ore', name: 'Silver Ore', emoji: '🩶', tier: 'rare', price: 6000 },
+  { id: 'amethyst', name: 'Amethyst', emoji: '🟣', tier: 'rare', price: 9000 },
+  { id: 'garnet', name: 'Garnet', emoji: '❤️', tier: 'rare', price: 15000 },
+  { id: 'opal', name: 'Opal', emoji: '🌈', tier: 'rare', price: 35000 },
+
+  { id: 'gold_nugget', name: 'Gold Nugget', emoji: '🟨', tier: 'epic', price: 120000 },
+  { id: 'emerald', name: 'Emerald', emoji: '💚', tier: 'epic', price: 250000 },
+  { id: 'sapphire', name: 'Sapphire', emoji: '💙', tier: 'epic', price: 300000 },
+  { id: 'ruby', name: 'Ruby', emoji: '♦️', tier: 'epic', price: 450000 },
+
+  { id: 'tanzanite', name: 'Tanzanite', emoji: '💜', tier: 'legendary', price: 800000 },
+  { id: 'rough_diamond', name: 'Rough Diamond', emoji: '💎', tier: 'legendary', price: 1000000 },
+  { id: 'meteorite_fragment', name: 'Meteorite Fragment', emoji: '☄️', tier: 'legendary', price: 1200000 },
+  { id: 'painite', name: 'Painite', emoji: '🟤', tier: 'legendary', price: 1700000 },
+];
+
+// A broken tool sells for 10% of what it cost.
+const BROKEN = TOOLS.map((t) => ({
+  id: `broken_${t.id}`, name: `Broken ${t.name}`, emoji: KINDS[t.kind].emoji, tier: 'broken', price: Math.round(t.price / 10),
+}));
+
+export const ITEMS = [
+  ...FISH.map((i) => ({ ...i, from: 'fish' })),
+  ...MINE.map((i) => ({ ...i, from: 'mine' })),
+  ...BROKEN,
 ];
 
 export const itemById = new Map(ITEMS.map((i) => [i.id, i]));

@@ -1,4 +1,5 @@
 import { ITEMS, itemById, formatMoney } from '../items.js';
+import { findTool } from '../tools.js';
 
 // "Gold Bar (100 g)" and "gold-bar" both become "goldbar".
 const key = (text) => text.toLowerCase().replace(/\(.*?\)/g, '').replace(/[^a-z0-9]/g, '');
@@ -58,6 +59,11 @@ export default {
       if (!lots.length) return reply(`You don't have any ${tier} items.`);
       return finish(lots);
     }
+
+    // Working tools aren't in the box and can't be sold (broken ones can).
+    const text = args.join(' ');
+    const tool = !/^broken\b/i.test(text) && findTool(text);
+    if (tool && db.tool(server.key, user.id, tool.kind)?.item === tool.id) return reply('Why would you wanna sell your own tools?');
 
     const last = args.at(-1).toLowerCase();
     const counted = args.length > 1 && (last === 'all' || /^\d+$/.test(last));

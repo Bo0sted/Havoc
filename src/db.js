@@ -39,6 +39,14 @@ const SCHEMA = `
     penalties INTEGER NOT NULL DEFAULT 0, biggest_win INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (server, user_id, game)
   );
+  CREATE TABLE IF NOT EXISTS tools (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, kind TEXT NOT NULL, item TEXT NOT NULL, uses INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (server, user_id, kind)
+  );
+  CREATE TABLE IF NOT EXISTS promo_claims (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, promo TEXT NOT NULL,
+    PRIMARY KEY (server, user_id, promo)
+  );
   CREATE TABLE IF NOT EXISTS items (
     server TEXT NOT NULL, user_id INTEGER NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL,
     PRIMARY KEY (server, user_id, item)
@@ -83,6 +91,13 @@ export function openDb(path) {
         won = won + excluded.won, lost = lost + excluded.lost, penalties = penalties + excluded.penalties,
         biggest_win = MAX(biggest_win, excluded.biggest_win)`),
     betStats: q('SELECT * FROM bet_stats WHERE server = ? AND user_id = ?'),
+    tool: q('SELECT item, uses FROM tools WHERE server = ? AND user_id = ? AND kind = ?'),
+    tools: q('SELECT kind, item, uses FROM tools WHERE server = ? AND user_id = ?'),
+    setTool: q('INSERT INTO tools (server, user_id, kind, item, uses) VALUES (?, ?, ?, ?, 0) ON CONFLICT DO UPDATE SET item = excluded.item, uses = 0'),
+    useTool: q('UPDATE tools SET uses = uses + 1 WHERE server = ? AND user_id = ? AND kind = ?'),
+    dropTool: q('DELETE FROM tools WHERE server = ? AND user_id = ? AND kind = ?'),
+    claimPromo: q('INSERT OR IGNORE INTO promo_claims (server, user_id, promo) VALUES (?, ?, ?)'),
+    promoClaimed: q('SELECT 1 FROM promo_claims WHERE server = ? AND user_id = ? AND promo = ?'),
     takeItem: q('UPDATE items SET qty = qty - ? WHERE server = ? AND user_id = ? AND item = ? AND qty >= ?'),
     addCents: q('INSERT INTO wallets (server, user_id, cents) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET cents = cents + excluded.cents'),
   };
@@ -151,6 +166,35 @@ export function openDb(path) {
     }),
     // Their betting record, one row per game.
     betStats: (server, userId) => s.betStats.all(server, userId),
+    // Tools (one per kind: 'pole', 'pickaxe'), as { item, uses } or null.
+    tool: (server, userId, kind) => s.tool.get(server, userId, kind) ?? null,
+    tools: (server, userId) => s.tools.all(server, userId),
+    useTool: (server, userId, kind) => s.useTool.run(server, userId, kind),
+    // The tool turns into its broken item in the Safety Deposit Box.
+    breakTool: (server, userId, kind, brokenItem) => atomic(() => {
+      s.dropTool.run(server, userId, kind);
+      s.addItem.run(server, userId, brokenItem, 1);
+    }),
+    // Pays `cost` and puts a fresh tool in that slot (replacing the old one,
+    // which was traded in). False, and nothing changes, if they can't afford it.
+    buyTool: (server, userId, kind, item, cost) => atomic(() => {
+      if (cost > 0 && s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
+      s.setTool.run(server, userId, kind, item);
+      return true;
+    }),
+    promoClaimed: (server, userId, promo) => !!s.promoClaimed.get(server, userId, promo),
+    // A promo is claimed once: as the tool itself, or as cash instead.
+    // False if it was already claimed.
+    claimPromoTool: (server, userId, promo, kind, item) => atomic(() => {
+      if (s.claimPromo.run(server, userId, promo).changes === 0) return false;
+      s.setTool.run(server, userId, kind, item);
+      return true;
+    }),
+    claimPromoCash: (server, userId, promo, cents) => atomic(() => {
+      if (s.claimPromo.run(server, userId, promo).changes === 0) return false;
+      s.addCents.run(server, userId, cents);
+      return true;
+    }),
     // Every wallet and every held item on one server, for rankings.
     wallets: (server) => s.wallets.all(server),
     allItems: (server) => s.allItems.all(server),

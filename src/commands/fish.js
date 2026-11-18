@@ -1,44 +1,30 @@
-import { ITEMS } from '../items.js';
+import { gatherCommand } from '../gather.js';
 
-// How often each kind of catch comes up (weights, not percentages).
-const TIERS = [
-  { tier: 'nothing', weight: 14 },
-  { tier: 'trash', weight: 17 },
-  { tier: 'common', weight: 48 },
-  { tier: 'rare', weight: 13 },
-  { tier: 'epic', weight: 6 },
-  { tier: 'legendary', weight: 2 },
-];
-const TOTAL = TIERS.reduce((sum, t) => sum + t.weight, 0);
-
-const MISSES = [
-  'Your line snapped. The fish are laughing at you.',
-  'You caught… absolutely nothing. Impressive.',
-  'A seagull stole your bait.',
-];
-
-const pick = (list) => list[Math.floor(Math.random() * list.length)];
-
-function roll() {
-  let n = Math.random() * TOTAL;
-  const { tier } = TIERS.find((t) => (n -= t.weight) < 0) ?? TIERS[0];
-  return tier === 'nothing' ? null : pick(ITEMS.filter((i) => i.tier === tier && !i.retired));
-}
-
-export default {
+export default gatherCommand({
   name: 'fish',
-  category: 'economy',
-  description: 'go fishing; catches go in your Safety Deposit Box',
-  cooldown: 20_000,
-  economy: true,
+  description: 'go fishing (needs a fishing pole from the shop); catches go in your Safety Deposit Box',
+  kind: 'pole',
+  from: 'fish',
+  verb: 'caught',
+  // How often each kind of catch comes up (weights, not percentages).
+  tiers: [
+    { tier: 'nothing', weight: 14 },
+    { tier: 'trash', weight: 17 },
+    { tier: 'common', weight: 48 },
+    { tier: 'rare', weight: 13 },
+    { tier: 'epic', weight: 6 },
+    { tier: 'legendary', weight: 2 },
+  ],
+  misses: [
+    'Your line snapped. The fish are laughing at you.',
+    'You caught… absolutely nothing. Impressive.',
+    'A seagull stole your bait.',
+  ],
+  noTool: [
+    'You tried fishing with your bare hands and a piranha bit you.',
+    'You tried fishing with your hands and fell into the water.',
+    'You tried grabbing a fish with your hands. It slapped you and swam away.',
+    'You threw a rock at the water and hoped. Nothing happened.',
+  ],
   cooldownText: (wait) => `🎣 You're still untangling your line. Try again in ${wait}.`,
-  async run({ user, server, db, reply, notHere }) {
-    if (!user) return notHere();
-    const item = roll();
-    if (!item) return reply(`🎣 ${pick(MISSES)}`);
-
-    db.addItem(server.key, user.id, item.id);
-    const shout = item.tier === 'legendary' ? ' **WHAT?!**' : item.tier === 'epic' ? ' Nice!' : '';
-    return reply(`🎣 **${user.name}** caught ${item.emoji} **${item.name}** (${item.tier})!${shout} It's in your Safety Deposit Box.`);
-  },
-};
+});
