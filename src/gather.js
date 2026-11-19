@@ -34,7 +34,7 @@ export function foundLine(emoji, name, verb, item) {
   return `${emoji} **${name}** ${verb} ${item.emoji} **${item.name}** (${item.tier})!${shout}`;
 }
 
-export function gatherCommand({ name, description, kind, from, verb, activity, energy, tiers, misses, noTool, cooldownText }) {
+export function gatherCommand({ name, description, kind, from, stream, verb, activity, energy, tiers, misses, noTool, cooldownText }) {
   const { noun, emoji } = KINDS[kind];
 
   return {
@@ -45,9 +45,8 @@ export function gatherCommand({ name, description, kind, from, verb, activity, e
     energy,
     cooldown: 5_000,
     economy: true,
-    earns: true, // counts toward milestones
     cooldownText,
-    async run({ prefix, user, server, db, reply, notHere }) {
+    async run({ prefix, user, server, db, track, reply, notHere }) {
       if (!user) return notHere();
 
       const held = db.tool(server.key, user.id, kind);
@@ -76,6 +75,7 @@ export function gatherCommand({ name, description, kind, from, verb, activity, e
       const item = rollTier(tiers, from);
       if (!item) return reply(`${emoji} ${pick(misses)}`);
       db.addItem(server.key, user.id, item.id);
+      track.earned(stream, item.price);
       return reply(foundLine(emoji, user.name, verb, item));
     },
   };

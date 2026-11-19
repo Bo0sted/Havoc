@@ -5,6 +5,7 @@ export default gatherCommand({
   description: 'go mining (needs a pickaxe from the shop; 4 energy); finds go in your Backpack',
   kind: 'pickaxe',
   from: 'mine',
+  stream: 'mining',
   verb: 'mined',
   activity: 'Mining',
   // Hard work, big finds: 4 times fishing's energy and about 4 times its

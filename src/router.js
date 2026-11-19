@@ -5,11 +5,13 @@
 //   4. economy commands refuse guests once, then ignore them for 12 hours
 //   5. cooldowns (admins skip them), then the API's own limit (nobody skips it)
 //   6. the command runs; anything that goes wrong is logged to the console only
-//   7. a money-making command that ran (`earns`) counts toward milestones (not while remote)
+//   7. an economy command that gained or lost money (through `track`) counts
+//      toward milestones (not while remote)
 // A command waiting on an answer (awaitAnswer) sees the person's messages first.
 import { formatWait } from './duration.js';
 import { chunks } from './chunks.js';
 import { countCommand } from './milestones.js';
+import { tracker } from './earnings.js';
 
 const GUEST_BLOCK = 12 * 3_600_000;
 const GUEST_REPLY = 'Guest accounts are unable to use economy commands';
@@ -56,8 +58,9 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
       }
       const busy = cooldowns.takeGlobal(cmd);
       if (busy) return await out.reply(`⏳ Everyone wants \`${prefix}${cmd.name}\` right now! It's free again in ${formatWait(busy)}.`);
+      const track = tracker(db, server.key, userId);
       await cmd.run({
-        cmd, prefix, args, message, channel, isAdmin, remote, home, server, db, cooldowns, commands, servers,
+        cmd, prefix, args, message, channel, isAdmin, remote, home, server, db, cooldowns, commands, servers, track,
         // The person running it, or null while remote: their id on this
         // server means someone else (or no one) on the other one.
         user: remote ? null : { id: userId, name: message.username, avatar: message.avatar },
@@ -78,8 +81,7 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
         remotes: { get: () => remotes.get(remoteKey(home, userId)) ?? null, set: (s) => remotes.set(remoteKey(home, userId), s), clear: () => remotes.delete(remoteKey(home, userId)) },
         ...out,
       });
-      const earns = typeof cmd.earns === 'function' ? cmd.earns(args) : cmd.earns;
-      if (earns && !remote) await milestone(home, { channelCode, message, threadId });
+      if (cmd.economy && track.didMove && !remote) await milestone(home, { channelCode, message, threadId });
     } catch (err) {
       console.error(`[${home.name}] ${prefix}${cmd.name} failed:`, err);
       out.reply(FAILED_REPLY).catch(() => {});

@@ -77,10 +77,8 @@ export default {
   cooldown: 10_000,
   cooldownText: (wait) => `Catch your breath! Your next bet is ready in ${wait}.`,
   economy: true,
-  // Only playing counts toward milestones, not the odds list or a record.
-  earns: (args) => args.length >= 2 && args[0].toLowerCase() !== 'record',
   cooldownFor: (args) => (args[0]?.toLowerCase() === 'record' ? RECORD : ALIASES[args[0]?.toLowerCase()] && args.length === 2 ? null : INFO),
-  async run({ cmd, prefix, args, user, server, db, cooldowns, findMember, awaitAnswer, replyEditable, reply, notHere }) {
+  async run({ cmd, prefix, args, user, server, db, cooldowns, track, findMember, awaitAnswer, replyEditable, reply, notHere }) {
     if (args[0]?.toLowerCase() === 'record') return showRecord({ args: args.slice(1), user, server, db, findMember, reply, notHere });
     const name = ALIASES[args[0]?.toLowerCase()];
     if (!name || args.length !== 2) {
@@ -92,14 +90,14 @@ export default {
     const release = claimGame(server.key, user.id);
     if (!release) return;
     try {
-      return await play({ game, name, cmd, prefix, args, user, server, db, cooldowns, awaitAnswer, replyEditable, reply });
+      return await play({ game, name, cmd, prefix, args, user, server, db, cooldowns, track, awaitAnswer, replyEditable, reply });
     } finally {
       release();
     }
   },
 };
 
-async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns, awaitAnswer, replyEditable, reply }) {
+async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns, track, awaitAnswer, replyEditable, reply }) {
   const balance = db.cents(server.key, user.id);
   const wager = parseAmount(args[1], balance);
   if (wager === null) return reply(`Usage: \`${prefix}bet ${name} <amount|all>\``);
@@ -121,6 +119,7 @@ async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns
     if (answer === null) {
       const penalty = Math.max(1, Math.round(wager * TIMEOUT_PENALTY));
       settle(wager - penalty, 'timeout');
+      track.lost('betting', penalty);
       wait(TIMEOUT_COOLDOWN);
       return edit(`⌛ Timed out, bet cancelled. 5% penalty: ${red(`-${formatMoney(penalty)}`)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
     }
@@ -128,6 +127,8 @@ async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns
     const [result, line] = game.judge(matchAnswer(answer, game.options, game.aliases), mine);
     const back = result === 'win' ? wager * game.pays : result === 'tie' ? wager : 0;
     settle(back, result);
+    track.earned('betting', back - wager);
+    track.lost('betting', wager - back);
     wait(game.cooldown[result]);
     const outcome = {
       win: `Congrats! ${green(`+${formatMoney(back - wager)}`)}.`,

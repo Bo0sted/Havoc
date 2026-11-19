@@ -76,6 +76,12 @@ const SCHEMA = `
     day INTEGER NOT NULL, today INTEGER NOT NULL,
     PRIMARY KEY (server, user_id)
   );
+  CREATE TABLE IF NOT EXISTS earnings (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, stream TEXT NOT NULL,
+    earned INTEGER NOT NULL DEFAULT 0, lost INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (server, user_id, stream)
+  );
+  CREATE TABLE IF NOT EXISTS migrations (name TEXT NOT NULL PRIMARY KEY);
 `;
 
 // The Backpack is the `items` table (it was the Safety Deposit Box, so
@@ -142,6 +148,13 @@ export function openDb(path) {
     licenses: q('SELECT license FROM licenses WHERE server = ? AND user_id = ? ORDER BY rowid'),
     addLicense: q('INSERT OR IGNORE INTO licenses (server, user_id, license) VALUES (?, ?, ?)'),
     commandCount: q('SELECT total, day, today FROM command_counts WHERE server = ? AND user_id = ?'),
+    earnings: q('SELECT stream, earned, lost FROM earnings WHERE server = ? AND user_id = ? ORDER BY rowid'),
+    earn: q('INSERT INTO earnings (server, user_id, stream, earned) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET earned = earned + excluded.earned'),
+    lose: q('INSERT INTO earnings (server, user_id, stream, lost) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET lost = lost + excluded.lost'),
+    migrated: q('SELECT 1 FROM migrations WHERE name = ?'),
+    migrate: q('INSERT INTO migrations (name) VALUES (?)'),
+    everyWallet: q('SELECT server, user_id, cents FROM wallets'),
+    everyItem: q('SELECT server, user_id, item, qty FROM items WHERE qty > 0 UNION ALL SELECT server, user_id, item, qty FROM safe_items WHERE qty > 0'),
     setCommandCount: q(`INSERT INTO command_counts (server, user_id, total, day, today) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT DO UPDATE SET total = excluded.total, day = excluded.day, today = excluded.today`),
   };
@@ -262,8 +275,34 @@ export function openDb(path) {
       const total = (row?.total ?? 0) + 1;
       s.setCommandCount.run(server, userId, total, day, today + 1);
       const reward = rewardFor(total);
-      if (reward > 0) s.addCents.run(server, userId, reward);
+      if (reward > 0) {
+        s.addCents.run(server, userId, reward);
+        s.earn.run(server, userId, 'milestones', reward);
+      }
       return { total, reward };
+    }),
+    // Someone's money-making command count ({ total } or null if none yet).
+    commandCount: (server, userId) => s.commandCount.get(server, userId) ?? null,
+    // Money someone has made (earned) and lost, per stream: totals that only
+    // ever go up. Rows as { stream, earned, lost }.
+    earnings: (server, userId) => s.earnings.all(server, userId),
+    earn: (server, userId, stream, cents) => cents > 0 && s.earn.run(server, userId, stream, cents),
+    lose: (server, userId, stream, cents) => cents > 0 && s.lose.run(server, userId, stream, cents),
+    // Once, when earnings tracking arrived: everyone already here starts
+    // with their net worth (cash plus Backpack and safe, at `valueOf`) as
+    // 'before'. Their old bets stay in ?bet record.
+    seedEarnings: (valueOf) => atomic(() => {
+      if (s.migrated.get('earnings')) return;
+      const worth = new Map();
+      const key = (server, userId) => `${server}\n${userId}`;
+      const add = (server, userId, cents) => {
+        const k = key(server, userId);
+        worth.set(k, { server, userId, cents: (worth.get(k)?.cents ?? 0) + cents });
+      };
+      for (const w of s.everyWallet.all()) add(w.server, w.user_id, w.cents);
+      for (const i of s.everyItem.all()) add(i.server, i.user_id, valueOf(i.item, i.qty));
+      for (const { server, userId, cents } of worth.values()) if (cents > 0) s.earn.run(server, userId, 'before', cents);
+      s.migrate.run('earnings');
     }),
     promoClaimed: (server, userId, promo) => !!s.promoClaimed.get(server, userId, promo),
     // A promo is claimed once: as the tool itself, or as cash instead.

@@ -3,6 +3,7 @@ import './console.js';
 import { HavenClient } from './haven.js';
 import { loadServers } from './config.js';
 import { openDb } from './db.js';
+import { valueOf } from './items.js';
 import { createCooldowns } from './cooldowns.js';
 import { createRouter } from './router.js';
 import commands from './commands/index.js';
@@ -28,6 +29,8 @@ if (!servers.length) {
 }
 
 const db = openDb(DB_PATH);
+// Once: everyone already here starts their earnings at their net worth.
+db.seedEarnings(valueOf);
 const cooldowns = createCooldowns(db);
 const router = createRouter({ prefix: PREFIX, commands, servers, db, cooldowns });
 

@@ -20,15 +20,15 @@ export default {
   economy: true,
   // Browsing has its own cooldown, so looking never holds up buying.
   cooldownFor: (args) => (args.length ? null : { name: 'shop list', cooldown: 5_000 }),
-  async run({ prefix, args, user, server, db, reply, notHere, awaitAnswer }) {
+  async run({ prefix, args, user, server, db, track, reply, notHere, awaitAnswer }) {
     if (!args.length) return reply(list(prefix, user, server, db));
     if (!user) return notHere();
     // Anything after ?shop is an item to buy, except "promo <name>".
     if (args[0].toLowerCase() === 'promo') {
       if (args.length === 1) return reply(`Usage: \`${prefix}shop promo <name>\``);
-      return redeem(args.slice(1).join(' '), { user, server, db, reply });
+      return redeem(args.slice(1).join(' '), { user, server, db, track, reply });
     }
-    return buy(args.join(' '), { prefix, user, server, db, reply, awaitAnswer });
+    return buy(args.join(' '), { prefix, user, server, db, track, reply, awaitAnswer });
   },
 };
 
@@ -75,7 +75,7 @@ function list(prefix, user, server, db) {
 
 // By number, or by name. A name that fits several items (a store selling
 // more than one thing) asks which one instead of guessing.
-function buy(text, { prefix, user, server, db, reply, awaitAnswer }) {
+function buy(text, { prefix, user, server, db, track, reply, awaitAnswer }) {
   let tool;
   if (/^\d+$/.test(text)) {
     tool = STOCK[Number(text) - 1];
@@ -88,9 +88,9 @@ function buy(text, { prefix, user, server, db, reply, awaitAnswer }) {
     }
     [tool] = found;
   }
-  if (BOOSTS.includes(tool)) return buyBoost(tool, { user, server, db, reply, awaitAnswer });
-  if (LICENSES.includes(tool)) return buyLicense(tool, { user, server, db, reply });
-  if (AMMO.includes(tool)) return buyAmmo(tool, { prefix, user, server, db, reply });
+  if (BOOSTS.includes(tool)) return buyBoost(tool, { user, server, db, track, reply, awaitAnswer });
+  if (LICENSES.includes(tool)) return buyLicense(tool, { user, server, db, track, reply });
+  if (AMMO.includes(tool)) return buyAmmo(tool, { prefix, user, server, db, track, reply });
   const { noun } = KINDS[tool.kind];
   const held = db.tool(server.key, user.id, tool.kind);
   const current = held && toolById.get(held.item);
@@ -110,6 +110,7 @@ function buy(text, { prefix, user, server, db, reply, awaitAnswer }) {
   const balance = db.cents(server.key, user.id);
   const bought = tool.kind === 'gun' ? db.buyGun(server.key, user.id, tool.id, cost) : db.buyTool(server.key, user.id, tool.kind, tool.id, cost);
   if (!bought) return reply(`That costs ${formatMoney(cost)}. You only have ${formatMoney(balance)}.`);
+  track.lost('shop', cost);
   const now = formatMoney(db.cents(server.key, user.id));
   const old = rounds ? `${current.name} (and ${rounds} ${rounds === 1 ? 'round' : 'rounds'})` : current?.name;
   return reply(credit
@@ -117,17 +118,18 @@ function buy(text, { prefix, user, server, db, reply, awaitAnswer }) {
     : `🛒 You bought a ${tool.name} for ${lost(cost)}. You now have ${now}.`);
 }
 
-function buyLicense(license, { user, server, db, reply }) {
+function buyLicense(license, { user, server, db, track, reply }) {
   if (db.licenses(server.key, user.id).includes(license.id)) return reply(`You already have a ${license.name}.`);
   const balance = db.cents(server.key, user.id);
   if (!db.buyLicense(server.key, user.id, license.id, license.price)) {
     return reply(`That costs ${formatMoney(license.price)}. You only have ${formatMoney(balance)}.`);
   }
+  track.lost('shop', license.price);
   return reply(`🪪 You bought a ${license.name} for ${lost(license.price)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
 
 // Ammo only for the gun someone has: anything else wouldn't fit it.
-function buyAmmo(ammo, { prefix, user, server, db, reply }) {
+function buyAmmo(ammo, { prefix, user, server, db, track, reply }) {
   const gun = toolById.get(db.tool(server.key, user.id, 'gun')?.item);
   if (!gun) return reply(`That's ammo for the ${gunFor(ammo).name}, and you don't have a gun. Check \`${prefix}shop\`.`);
   if (gun.ammo !== ammo.id) return reply(`That won't fit your ${gun.name}. It takes ${ammoById.get(gun.ammo).name} (number ${numberOf(ammoById.get(gun.ammo))}).`);
@@ -135,6 +137,7 @@ function buyAmmo(ammo, { prefix, user, server, db, reply }) {
   if (!db.buyAmmo(server.key, user.id, ammo.id, ammo.rounds, ammo.price)) {
     return reply(`That costs ${formatMoney(ammo.price)}. You only have ${formatMoney(balance)}.`);
   }
+  track.lost('shop', ammo.price);
   const rounds = db.ammo(server.key, user.id).get(ammo.id);
   return reply(`📦 You bought ${ammo.rounds} rounds of ${ammo.name} for ${lost(ammo.price)} (${rounds} now). You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
@@ -143,7 +146,7 @@ const YES_NO = { y: 'yes', yeah: 'yes', yep: 'yes', sure: 'yes', ok: 'yes', okay
 
 // Recovery items are used on the spot. One that would top the bar past its
 // max asks first, since the extra is lost.
-async function buyBoost(boost, { user, server, db, reply, awaitAnswer }) {
+async function buyBoost(boost, { user, server, db, track, reply, awaitAnswer }) {
   const refused = (bar) => {
     if (bar.boostIn) return `You've had a recovery item in the last hour. Your next one is ready in ${formatWait(bar.boostIn)}.`;
     if (bar.points >= bar.max) return `Your energy is already full (${bar.max}/${bar.max}).`;
@@ -174,10 +177,11 @@ async function buyBoost(boost, { user, server, db, reply, awaitAnswer }) {
   const now = Date.now();
   const { points } = boosted(bar, boost);
   if (!db.buyBoost(server.key, user.id, boost.price, points, points >= bar.max ? now : bar.since, now)) return reply(refused(bar));
+  track.lost('shop', boost.price);
   return reply(`⚡ You bought ${/^[aeiou]/i.test(boost.name) ? 'an' : 'a'} ${boost.name} for ${lost(boost.price)}. Energy: ${points}/${bar.max}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
 
-function redeem(text, { user, server, db, reply }) {
+function redeem(text, { user, server, db, track, reply }) {
   const id = matchAnswer(text, PROMOS.map((p) => p.id));
   const promo = PROMOS.find((p) => p.id === id);
   if (!promo) return reply(`There's no promo called **${text}**.`);
@@ -189,6 +193,7 @@ function redeem(text, { user, server, db, reply }) {
   // Only one tool of a kind: someone who already has one gets its price instead.
   if (current) {
     if (!db.claimPromoCash(server.key, user.id, promo.id, tool.price)) return reply('You already claimed that promo.');
+    track.earned('promos', tool.price);
     const better = rankOf(current) > rankOf(tool) ? 'better ' : '';
     return reply(`🎁 You already have a ${better}${KINDS[tool.kind].noun}, so here's ${gained(tool.price)} instead! You now have ${formatMoney(db.cents(server.key, user.id))}.`);
   }

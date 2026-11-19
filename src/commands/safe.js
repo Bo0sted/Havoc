@@ -10,10 +10,10 @@ export default {
   description: 'your safe (buy one in the shop): put things in from your Backpack, take them out, or sell them from it; a category or `all` works too',
   cooldown: 5_000,
   economy: true,
-  async run({ prefix, args, user, server, db, reply, notHere }) {
+  async run({ prefix, args, user, server, db, track, reply, notHere }) {
     if (!user) return notHere();
     const sub = args[0]?.toLowerCase();
-    if (sub === 'sell') return sellFrom('safe', args.slice(1), { prefix, user, server, db, reply });
+    if (sub === 'sell') return sellFrom('safe', args.slice(1), { prefix, user, server, db, track, reply });
 
     const safe = safeOf(db, server.key, user.id);
     if (!args.length) {

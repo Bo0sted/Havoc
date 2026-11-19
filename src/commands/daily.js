@@ -19,8 +19,7 @@ export default {
   category: 'economy',
   description: 'free cash every 24 hours; claim again within 48 hours to build a streak',
   economy: true,
-  earns: true, // counts toward milestones
-  async run({ user, server, db, reply, notHere }) {
+  async run({ user, server, db, track, reply, notHere }) {
     if (!user) return notHere();
     const now = Date.now();
     const prev = db.daily(server.key, user.id);
@@ -31,6 +30,7 @@ export default {
     const streak = prev && now - prev.last < 2 * DAY ? prev.streak + 1 : 1;
     const cents = pays(streak);
     db.claimDaily(server.key, user.id, now, streak, cents);
+    track.earned('daily', cents);
     const fire = streak > 1 ? ` 🔥 ${streak}-day streak!` : prev?.streak > 1 ? ` Your ${prev.streak}-day streak ended.` : '';
     return reply(`💵 **${user.name}** claimed ${gained(cents)}!${fire} You now have ${formatMoney(db.cents(server.key, user.id))}.\nYour next daily will be **${formatMoney(pays(streak + 1))}**, ${ready(now)} (claim it before <t:${stamp(now + 2 * DAY)}:f> to keep your streak).`);
   },

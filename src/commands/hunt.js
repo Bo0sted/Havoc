@@ -81,9 +81,8 @@ export default {
   energies: { small: MODES.small.energy, big: MODES.big.energy },
   cooldown: 5_000,
   economy: true,
-  earns: true, // counts toward milestones
   cooldownText: (wait) => `🔫 You're still reloading. Try again in ${wait}.`,
-  async run({ prefix, args, user, server, db, reply, notHere }) {
+  async run({ prefix, args, user, server, db, track, reply, notHere }) {
     const mode = MODES[matchAnswer(args.join(' '), Object.keys(MODES))];
     if (!mode) return reply(`Usage: \`${prefix}hunt small\` (any gun, 1 energy) or \`${prefix}hunt big\` (a shotgun or better, 2 energy)`);
     if (!user) return notHere();
@@ -110,8 +109,13 @@ export default {
 
     const found = rollTier(mode.tiers(gun), mode.from);
     if (!found) return reply(`🔫 ${pick(mode.misses)}`);
-    if (found.tier === 'hospital') return reply(`🏥 ${pick(mode.hurt)} ${billLine(hospitalize(db, server.key, user.id))}`);
+    if (found.tier === 'hospital') {
+      const bill = hospitalize(db, server.key, user.id);
+      track.lost('hunting', bill.bill - bill.forgiven);
+      return reply(`🏥 ${pick(mode.hurt)} ${billLine(bill)}`);
+    }
     db.addItem(server.key, user.id, found.id);
+    track.earned('hunting', found.price);
     return reply(foundLine('🔫', user.name, 'bagged', found));
   },
 };

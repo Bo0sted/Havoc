@@ -5,6 +5,7 @@ export default gatherCommand({
   description: 'go fishing (needs a fishing pole from the shop; 1 energy); catches go in your Backpack',
   kind: 'pole',
   from: 'fish',
+  stream: 'fishing',
   verb: 'caught',
   activity: 'Fishing',
   // Little work, small catches: a quarter of mining's energy and about a

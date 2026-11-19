@@ -1,6 +1,6 @@
-// Rewards for running money-making commands (`earns`: fish, mine, hunt,
-// daily, lottery, hangman, bet; not shop, sell, money and the like). Each
-// milestone pays more than the last, from $250 at 10 commands to $350,000
+// Rewards for economy commands that gained or lost money (a catch, a claim,
+// a win, a bill, a sale, a purchase; not a miss, a cooldown or a look at
+// your stats). Each milestone pays more than the last, from $250 at 10 commands to $350,000
 // at 100,000, then $350,000 for every 50,000 after that. Only the first DAILY_CAP a day (UTC) count, so
 // spamming cheap commands can't out-earn playing. Paid with the command
 // that reaches it; the congratulations is a separate, non-silent ping.

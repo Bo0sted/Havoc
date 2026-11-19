@@ -17,8 +17,7 @@ export default {
   description: 'guess a 5-8 letter word, one try per letter; pays $100 per letter, $100 less for each try used (`?quit` gives up)',
   cooldown: LOSS_COOLDOWN,
   economy: true,
-  earns: true, // counts toward milestones
-  async run({ cmd, prefix, user, server, db, cooldowns, awaitAnswer, replyEditable, reply, notHere }) {
+  async run({ cmd, prefix, user, server, db, cooldowns, track, awaitAnswer, replyEditable, reply, notHere }) {
     if (!user) return notHere();
     const release = claimGame(server.key, user.id);
     if (!release) return;
@@ -51,6 +50,7 @@ export default {
       const finish = (text, ms) => { done = true; wait(ms); return edit(text); };
       const penalise = () => {
         const taken = db.takeUpTo(server.key, user.id, Math.round(len * PER_LETTER * PENALTY));
+        track.lost('hangman', taken);
         return `${taken ? ` ${red(`-${formatMoney(taken)}`)} penalty.` : ''} You now have ${formatMoney(db.cents(server.key, user.id))}.`;
       };
 
@@ -64,6 +64,7 @@ export default {
         if (said === null) return finish(`⌛ Time's up! The word was **${word}**.${penalise()}`, LOSS_COOLDOWN);
         if (said.trim().toLowerCase() === quit) {
           const taken = db.takeUpTo(server.key, user.id, Math.round(len * PER_LETTER * PENALTY));
+          track.lost('hangman', taken);
           const now = formatMoney(db.cents(server.key, user.id));
           return finish(taken
             ? `You quit. The word was **${word}**. I'm keeping ${lost(taken)} for wasting my time. You now have ${now}.`
@@ -94,6 +95,7 @@ export default {
         if (shown.every(Boolean)) {
           const won = payout();
           db.addCents(server.key, user.id, won);
+          track.earned('hangman', won);
           return finish(`🎉 Correct! The word was **${word}**. ${green(`+${formatMoney(won)}`)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`, WIN_COOLDOWN);
         }
         used += 1;

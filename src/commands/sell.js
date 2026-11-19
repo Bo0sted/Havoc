@@ -10,14 +10,14 @@ export default {
   description: `sell from your Backpack; categories: ${[...TIERS].join(', ')} (selling all keeps legendaries)`,
   cooldown: 5_000,
   economy: true,
-  async run({ prefix, args, user, server, db, reply, notHere }) {
+  async run({ prefix, args, user, server, db, track, reply, notHere }) {
     if (!user) return notHere();
-    return sellFrom('backpack', args, { prefix, user, server, db, reply });
+    return sellFrom('backpack', args, { prefix, user, server, db, track, reply });
   },
 };
 
 // ?sell (the Backpack) and ?safe sell (the safe) work the same way.
-export function sellFrom(place, args, { prefix, user, server, db, reply }) {
+export function sellFrom(place, args, { prefix, user, server, db, track, reply }) {
   const command = place === 'safe' ? 'safe sell' : 'sell';
   const where = place === 'safe' ? ' in your safe' : '';
   const box = place === 'safe' ? 'safe' : 'Backpack';
@@ -38,5 +38,7 @@ export function sellFrom(place, args, { prefix, user, server, db, reply }) {
   const cents = lots.reduce((sum, l) => sum + l.item.price * l.qty, 0);
   const ok = db.sell(server.key, user.id, lots.map((l) => ({ item: l.item.id, qty: l.qty })), cents, place);
   if (!ok) return reply(`Your ${box} changed while I was counting. Try again.`);
+  // Catches were counted as earned when caught: selling only turns them into cash.
+  track.moved();
   return reply(`💰 Sold ${describe(lots)} for ${gained(cents)}. You now have ${formatMoney(db.cents(server.key, user.id))}.${kept}`);
 }

@@ -41,8 +41,7 @@ export default {
   cooldown: 30 * 60_000,
   cooldownText: (wait) => `🎟️ Your next ticket is ready in ${wait}.`,
   economy: true,
-  earns: true, // counts toward milestones
-  async run({ cmd, user, server, db, cooldowns, awaitAnswer, replyEditable, notHere }) {
+  async run({ cmd, user, server, db, cooldowns, track, awaitAnswer, replyEditable, notHere }) {
     if (!user) return notHere();
     const release = claimGame(server.key, user.id);
     if (!release) return;
@@ -56,6 +55,7 @@ export default {
       if (guess === answer) {
         const cents = pays(streak);
         db.lotteryWin(server.key, user.id, streak + 1, cents);
+        track.earned('lottery', cents);
         cooldowns.setRemaining(server.key, cmd, user.id, WIN_COOLDOWN);
         const row = streak ? ` That's ${streak + 1} in a row!` : '';
         return edit(`🎉 Congrats **${user.name}**, the word was **${answer}**! ${green(`+${formatMoney(cents)}`)}.${row} Your next win pays **${formatMoney(pays(streak + 1))}**.`);
