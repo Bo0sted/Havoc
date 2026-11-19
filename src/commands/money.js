@@ -1,8 +1,8 @@
-import { formatMoney } from '../items.js';
 import { findTarget } from '../members.js';
 import { KINDS, toolById, licenseById, wear, breakable } from '../tools.js';
 import { energyOf, waitFor } from '../energy.js';
 import { placeOf, safeOf, contents } from '../storage.js';
+import { gained } from '../colors.js';
 
 export default {
   name: 'money',
@@ -24,7 +24,7 @@ export default {
     const licenses = db.licenses(server.key, who.id).map((id) => licenseById.get(id)?.name).filter(Boolean);
     const overview = [
       '**Overview**',
-      `💵 ${formatMoney(db.cents(server.key, who.id))}`,
+      `💵 ${gained(db.cents(server.key, who.id))}`,
       energyLine(energyOf(db, server.key, who.id)),
       `Privileges: ${licenses.length ? licenses.join(' · ') : 'None'}`,
     ];

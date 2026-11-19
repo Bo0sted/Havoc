@@ -61,6 +61,7 @@ function list(prefix, user, server, db) {
   const promos = user ? PROMOS.filter((p) => !db.promoClaimed(server.key, user.id, p.id)) : [];
   return [
     `**Shop** (buy with \`${prefix}shop <number>\`, e.g. \`${prefix}shop 1\`)`,
+    '🟢 = Items you have',
     `${KINDS.pole.emoji} **Fishing poles**`, ...tools('pole'),
     `${KINDS.pickaxe.emoji} **Pickaxes**`, ...tools('pickaxe'),
     '🪪 **Licenses** (yours for good)', ...LICENSES.map((l) => line(l, `needed ${l.needed}`)),
