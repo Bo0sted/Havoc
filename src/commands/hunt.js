@@ -80,6 +80,7 @@ export default {
   energies: { small: MODES.small.energy, big: MODES.big.energy },
   cooldown: 5_000,
   economy: true,
+  earns: true, // counts toward milestones
   cooldownText: (wait) => `🔫 You're still reloading. Try again in ${wait}.`,
   async run({ prefix, args, user, server, db, reply, notHere }) {
     const mode = MODES[matchAnswer(args.join(' '), Object.keys(MODES))];

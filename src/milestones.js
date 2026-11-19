@@ -1,6 +1,7 @@
-// Rewards for running economy commands: each milestone pays more than the
-// last, from $250 at 10 commands to $350,000 at 100,000, then $350,000 for
-// every 50,000 after that. Only the first DAILY_CAP a day (UTC) count, so
+// Rewards for running money-making commands (`earns`: fish, mine, hunt,
+// daily, lottery, hangman, bet; not shop, sell, money and the like). Each
+// milestone pays more than the last, from $250 at 10 commands to $350,000
+// at 100,000, then $350,000 for every 50,000 after that. Only the first DAILY_CAP a day (UTC) count, so
 // spamming cheap commands can't out-earn playing. Paid with the command
 // that reaches it; the congratulations is a separate, non-silent ping.
 import { formatMoney } from './items.js';
@@ -26,7 +27,7 @@ export function nextAfter(count) {
   return MILESTONES.find(([at]) => at > count)?.[0] ?? LAST + (Math.floor((count - LAST) / EVERY) + 1) * EVERY;
 }
 
-// Counts one economy command. When it reached a milestone (already paid),
+// Counts one money-making command. When it reached a milestone (already paid),
 // returns the congratulations as a function of how to @mention them; else null.
 export function countCommand(db, server, userId, now = Date.now()) {
   const counted = db.countCommand(server, userId, Math.floor(now / DAY), DAILY_CAP, rewardAt);

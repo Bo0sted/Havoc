@@ -76,6 +76,8 @@ export default {
   cooldown: 10_000,
   cooldownText: (wait) => `Catch your breath! Your next bet is ready in ${wait}.`,
   economy: true,
+  // Only playing counts toward milestones, not the odds list or a record.
+  earns: (args) => args.length >= 2 && args[0].toLowerCase() !== 'record',
   cooldownFor: (args) => (args[0]?.toLowerCase() === 'record' ? RECORD : ALIASES[args[0]?.toLowerCase()] && args.length === 2 ? null : INFO),
   async run({ cmd, prefix, args, user, server, db, cooldowns, findMember, awaitAnswer, replyEditable, reply, notHere }) {
     if (args[0]?.toLowerCase() === 'record') return showRecord({ args: args.slice(1), user, server, db, findMember, reply, notHere });

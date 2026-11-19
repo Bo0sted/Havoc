@@ -5,7 +5,7 @@
 //   4. economy commands refuse guests once, then ignore them for 12 hours
 //   5. cooldowns (admins skip them), then the API's own limit (nobody skips it)
 //   6. the command runs; anything that goes wrong is logged to the console only
-//   7. an economy command that ran counts toward its milestones (not while remote)
+//   7. a money-making command that ran (`earns`) counts toward milestones (not while remote)
 // A command waiting on an answer (awaitAnswer) sees the person's messages first.
 import { formatWait } from './duration.js';
 import { chunks } from './chunks.js';
@@ -78,7 +78,8 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
         remotes: { get: () => remotes.get(remoteKey(home, userId)) ?? null, set: (s) => remotes.set(remoteKey(home, userId), s), clear: () => remotes.delete(remoteKey(home, userId)) },
         ...out,
       });
-      if (cmd.economy && !remote) await milestone(home, { channelCode, message, threadId });
+      const earns = typeof cmd.earns === 'function' ? cmd.earns(args) : cmd.earns;
+      if (earns && !remote) await milestone(home, { channelCode, message, threadId });
     } catch (err) {
       console.error(`[${home.name}] ${prefix}${cmd.name} failed:`, err);
       out.reply(FAILED_REPLY).catch(() => {});

@@ -16,6 +16,7 @@ export default {
   description: 'guess a 5-8 letter word, one try per letter; pays $100 per letter, $100 less for each try used (`?quit` gives up)',
   cooldown: LOSS_COOLDOWN,
   economy: true,
+  earns: true, // counts toward milestones
   async run({ cmd, prefix, user, server, db, cooldowns, awaitAnswer, replyEditable, reply, notHere }) {
     if (!user) return notHere();
     const release = claimGame(server.key, user.id);

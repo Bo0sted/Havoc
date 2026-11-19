@@ -40,6 +40,7 @@ export default {
   cooldown: 30 * 60_000,
   cooldownText: (wait) => `🎟️ Your next ticket is ready in ${wait}.`,
   economy: true,
+  earns: true, // counts toward milestones
   async run({ cmd, user, server, db, cooldowns, awaitAnswer, replyEditable, notHere }) {
     if (!user) return notHere();
     const release = claimGame(server.key, user.id);

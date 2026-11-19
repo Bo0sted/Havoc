@@ -45,6 +45,7 @@ export function gatherCommand({ name, description, kind, from, verb, activity, e
     energy,
     cooldown: 5_000,
     economy: true,
+    earns: true, // counts toward milestones
     cooldownText,
     async run({ prefix, user, server, db, reply, notHere }) {
       if (!user) return notHere();

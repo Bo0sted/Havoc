@@ -14,6 +14,7 @@ export default {
   category: 'economy',
   description: 'free cash every 24 hours; claim again within 48 hours to build a streak',
   economy: true,
+  earns: true, // counts toward milestones
   async run({ user, server, db, reply, notHere }) {
     if (!user) return notHere();
     const now = Date.now();
