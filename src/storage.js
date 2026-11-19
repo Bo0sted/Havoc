@@ -1,7 +1,7 @@
 // The Backpack (where every catch lands) and the safe: how much room each
 // has, and turning "<item> [amount|all]", "<category>" or "all" into the
 // stacks it means. Retired items take no space and can't be chosen.
-import { ITEMS, itemById } from './items.js';
+import { ITEMS, itemById, valueOf } from './items.js';
 import { toolById } from './tools.js';
 
 export const BACKPACK_SPACE = 100;
@@ -12,6 +12,13 @@ const order = new Map(ITEMS.map((item, i) => [item.id, i]));
 // Someone's safe (from the shop), or null.
 export function safeOf(db, server, userId) {
   return toolById.get(db.tool(server, userId, 'safe')?.item) ?? null;
+}
+
+// Net worth: cash plus everything in the Backpack and safe at its sell
+// price (what ?top ranks by, and what hospital bills are a share of).
+export function worthOf(db, server, userId) {
+  const rows = [...db.items(server, userId), ...db.items(server, userId, 'safe')];
+  return db.cents(server, userId) + rows.reduce((sum, r) => sum + valueOf(r.item, r.qty), 0);
 }
 
 // Items that count toward the space a place has.

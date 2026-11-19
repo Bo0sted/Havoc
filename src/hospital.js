@@ -3,7 +3,8 @@
 // every level. 1-4% of the first $100k, 8-10% of anything above that, so
 // crossing $100k doesn't make the bill jump. Never more than they have.
 import { randomInt } from 'node:crypto';
-import { valueOf, itemById } from './items.js';
+import { itemById } from './items.js';
+import { worthOf } from './storage.js';
 
 const BRACKET = 10_000_000; // $100k, in cents
 
@@ -21,11 +22,6 @@ export function hospitalBill(worth) {
   const low = Math.min(worth, BRACKET);
   const high = Math.max(0, worth - BRACKET);
   return Math.round((low * randomInt(100, 401) + high * randomInt(800, 1001)) / 10_000);
-}
-
-export function worthOf(db, server, userId) {
-  const rows = [...db.items(server, userId), ...db.items(server, userId, 'safe')];
-  return db.cents(server, userId) + rows.reduce((sum, r) => sum + valueOf(r.item, r.qty), 0);
 }
 
 // Bills someone and collects it: cash, then Backpack items, then safe

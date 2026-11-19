@@ -1,7 +1,7 @@
 import { findTarget } from '../members.js';
 import { KINDS, toolById, licenseById, wear, breakable } from '../tools.js';
 import { energyOf, waitFor } from '../energy.js';
-import { placeOf, safeOf, contents } from '../storage.js';
+import { placeOf, safeOf, contents, worthOf } from '../storage.js';
 import { gained, lost } from '../colors.js';
 import { STREAMS, TRACKING_START } from '../earnings.js';
 import { nextAfter } from '../milestones.js';
@@ -31,6 +31,7 @@ export default {
     const overview = [
       '**Overview**',
       `💵 ${gained(db.cents(server.key, who.id))}`,
+      `Net Worth: ${gained(worthOf(db, server.key, who.id))}`,
       energyLine(energyOf(db, server.key, who.id)),
       `Privileges: ${licenses.length ? licenses.join(' · ') : 'None'}`,
     ];
