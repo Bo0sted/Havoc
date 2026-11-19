@@ -109,7 +109,11 @@ export class HavenClient extends EventEmitter {
     this.socket.on('channel-members', ({ channelCode, members }) => {
       for (const m of members || []) {
         this.remember(m.id, m.username);
-        if (m.loginName) this.members.set(m.loginName.toLowerCase(), this.members.get(m.id));
+        const entry = this.members.get(m.id);
+        if (m.loginName && entry) {
+          entry.login = m.loginName;
+          this.members.set(m.loginName.toLowerCase(), entry);
+        }
       }
       this.emit('channel-members', channelCode);
     });
@@ -154,14 +158,15 @@ export class HavenClient extends EventEmitter {
   }
 
   // Posts in the channel, or inside a topic/thread when threadId is set.
+  // Silent unless `silent: false` (a ping that should notify).
   // Resolves once it has gone out (it may wait its turn, see SEND_MAX).
-  post(channelCode, fields, { replyTo, threadId } = {}) {
+  post(channelCode, fields, { replyTo, threadId, silent = true } = {}) {
     return new Promise((resolve) => {
       this.outbox.push(() => {
         if (threadId) {
-          this.socket.emit('send-thread-message', { parentId: threadId, silent: true, ...fields, ...(replyTo && { replyTo }) });
+          this.socket.emit('send-thread-message', { parentId: threadId, silent, ...fields, ...(replyTo && { replyTo }) });
         } else {
-          this.socket.emit('send-message', { code: channelCode, silent: true, ...fields, ...(replyTo && { replyTo }) });
+          this.socket.emit('send-message', { code: channelCode, silent, ...fields, ...(replyTo && { replyTo }) });
         }
         resolve();
       });
@@ -218,7 +223,7 @@ export class HavenClient extends EventEmitter {
   remember(id, name, avatar, isGuest) {
     if (id == null || !name) return;
     const prev = this.members.get(id);
-    const entry = { id, name, avatar: avatar !== undefined ? avatar : prev?.avatar, isGuest: isGuest ?? prev?.isGuest };
+    const entry = { id, name, login: prev?.login, avatar: avatar !== undefined ? avatar : prev?.avatar, isGuest: isGuest ?? prev?.isGuest };
     this.members.set(id, entry);
     this.members.set(name.toLowerCase(), entry);
   }
@@ -278,6 +283,15 @@ export class HavenClient extends EventEmitter {
       await this.ask('get-user-profile', { userId: member.id }, 'profile', (id) => id === member.id);
     }
     return this.members.get(key) ?? null;
+  }
+
+  // Someone's login name (what an @mention has to use to ping them), from
+  // the channel's member list; null if they can't be found.
+  async loginName(id, channelCode = this.anyChannel()) {
+    if (!this.members.get(id)?.login && channelCode) {
+      await this.ask('get-channel-members', { code: channelCode }, 'channel-members', (c) => c === channelCode);
+    }
+    return this.members.get(id)?.login ?? null;
   }
 
   // Display names for user ids, fetching member lists channel by channel

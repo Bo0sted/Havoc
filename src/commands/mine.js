@@ -2,7 +2,7 @@ import { gatherCommand } from '../gather.js';
 
 export default gatherCommand({
   name: 'mine',
-  description: 'go mining (needs a pickaxe from the shop; 4 energy); finds go in your Safety Deposit Box',
+  description: 'go mining (needs a pickaxe from the shop; 4 energy); finds go in your Backpack',
   kind: 'pickaxe',
   from: 'mine',
   verb: 'mined',

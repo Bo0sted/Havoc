@@ -8,9 +8,10 @@ any number of servers at once and answers messages that start with a prefix
 |---|---|---|
 | `?help` | lists the commands (admins also see the admin ones) | 5sec |
 | `?cat` | a random cat picture | 5sec |
-| `?fish` | go fishing; catches (trash included) go in your Safety Deposit Box | 20sec |
-| `?money` / `?bank [@user]` | money and Safety Deposit Box, yours or someone else's | 5sec |
-| `?bet` | not built yet | 5sec |
+| `?fish` / `?mine` | go fishing or mining; catches (trash included) go in your Backpack | 5sec |
+| `?hunt small` / `?hunt big` | go hunting with a Hunting License, a gun and ammo; big game risks a hospital bill | 5sec |
+| `?money` / `?stats [@user]` | money, energy, licenses, tools, Backpack and safe, yours or someone else's | 5sec |
+| `?safe` | move things between your Backpack and your safe, or sell from the safe | 5sec |
 | `?blowup [@user]` | "explodes" a picture: the first attached image, else the named user's, else yours | 15sec |
 | `?id [@user]` | a Haven user id | 1hr |
 | `?cooldown` | **admin**: list cooldowns, `?cooldown <command> <X><sec\|min\|hr>` to override one on this server, `?cooldown reset <command>` to remove it | none |
@@ -57,7 +58,9 @@ needing a server.
 | `src/router.js` | admin check, `?remote`, guest check, cooldowns, error handling |
 | `src/db.js` | SQLite storage |
 | `src/cooldowns.js`, `src/duration.js` | cooldown checks and `30sec`/`5min`/`1hr` text |
-| `src/items.js` | everything that can be in a Safety Deposit Box, with sell prices |
+| `src/items.js` | everything that can be in a Backpack or safe, with sell prices |
+| `src/storage.js` | Backpack and safe space, choosing items by name, amount or tier |
+| `src/hospital.js`, `src/milestones.js` | hunting's hospital bills; economy command milestones |
 | `src/members.js` | `@user` lookup shared by commands |
 | `src/commands/` | one file per command; `index.js` lists them |
 

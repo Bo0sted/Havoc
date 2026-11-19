@@ -5,9 +5,11 @@
 //   4. economy commands refuse guests once, then ignore them for 12 hours
 //   5. cooldowns (admins skip them), then the API's own limit (nobody skips it)
 //   6. the command runs; anything that goes wrong is logged to the console only
+//   7. an economy command that ran counts toward its milestones (not while remote)
 // A command waiting on an answer (awaitAnswer) sees the person's messages first.
 import { formatWait } from './duration.js';
 import { chunks } from './chunks.js';
+import { countCommand } from './milestones.js';
 
 const GUEST_BLOCK = 12 * 3_600_000;
 const GUEST_REPLY = 'Guest accounts are unable to use economy commands';
@@ -76,10 +78,20 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
         remotes: { get: () => remotes.get(remoteKey(home, userId)) ?? null, set: (s) => remotes.set(remoteKey(home, userId), s), clear: () => remotes.delete(remoteKey(home, userId)) },
         ...out,
       });
+      if (cmd.economy && !remote) await milestone(home, { channelCode, message, threadId });
     } catch (err) {
       console.error(`[${home.name}] ${prefix}${cmd.name} failed:`, err);
       out.reply(FAILED_REPLY).catch(() => {});
     }
+  }
+
+  // A milestone reached is paid at once and announced with a ping: its own
+  // message (not a reply, not silent) where the command was typed.
+  async function milestone(home, { channelCode, message, threadId }) {
+    const congrats = countCommand(db, home.key, message.user_id);
+    if (!congrats) return;
+    const login = await home.client.loginName(message.user_id, channelCode);
+    home.client.send(channelCode, congrats(`@${login ?? message.username}`), { threadId, silent: false });
   }
 
   // With no bot channels set, every channel counts.

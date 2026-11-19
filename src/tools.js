@@ -1,16 +1,19 @@
-// Fishing poles and pickaxes sold in ?shop, and the promos that give them.
-// A tool is safe for `guaranteed` uses; after that each use has a
-// `breakChance`% chance of breaking it, and the use after `max` always does.
-// Within a kind, later tools are better: upgrading means buying one further
-// down the list (downgrading isn't allowed). Ids are stored in the database,
-// so never rename one. Poles last about twice as many uses as pickaxes of
-// the same tier: a cast costs a quarter of a swing's energy, so fishing
-// goes through them much faster.
+// Everything ?shop sells except recovery items: tools (one of each kind per
+// person), ammo and licenses, plus the promos that give tools away.
+// Poles and pickaxes are safe for `guaranteed` uses; after that each use has
+// a `breakChance`% chance of breaking it, and the use after `max` always
+// does. Guns and safes never break. Within a kind, later tools are better:
+// upgrading means buying one further down the list (downgrading isn't
+// allowed). Ids are stored in the database, so never rename one. Poles last
+// about twice as many uses as pickaxes of the same tier: a cast costs a
+// quarter of a swing's energy, so fishing goes through them much faster.
 import { matchAnswer } from './answers.js';
 
 export const KINDS = {
   pole: { noun: 'fishing pole', unit: 'casts', emoji: '🎣' },
   pickaxe: { noun: 'pickaxe', unit: 'swings', emoji: '⛏️' },
+  gun: { noun: 'gun', unit: 'rounds', emoji: '🔫' },
+  safe: { noun: 'safe', emoji: '🔒' },
 };
 
 export const TOOLS = [
@@ -29,12 +32,48 @@ export const TOOLS = [
     breaks: "The head flew off your Home Depot Pickaxe. You're holding a stick now." },
   { id: 'snap_on_pickaxe', kind: 'pickaxe', name: 'Snap-on Pickaxe', price: 30_000, max: 55, guaranteed: 35, breakChance: 5,
     breaks: 'Your Snap-on Pickaxe broke. A Snap-on truck is already on its way to sell you another.' },
+
+  // Guns fire one round of their `ammo` per hunt. `big` guns can hunt big
+  // game, where `hospital` is the % chance of ending up there (bigger guns
+  // keep you further from the animal). Finds are the same with every gun.
+  { id: 'marlin_60', kind: 'gun', name: 'Marlin Model 60', price: 250_000, ammo: 'ammo_22lr', big: false },
+  { id: 'mossberg_500', kind: 'gun', name: 'Mossberg 500', price: 1_000_000, ammo: 'ammo_12ga', big: true, hospital: 15 },
+  { id: 'remington_700', kind: 'gun', name: 'Remington 700', price: 2_500_000, ammo: 'ammo_308', big: true, hospital: 10 },
+  { id: 'barrett_50', kind: 'gun', name: 'Barrett .50 Cal', price: 7_500_000, ammo: 'ammo_50bmg', big: true, hospital: 7 },
+
+  // Safes only differ in how many items they hold. Bigger ones cost more per
+  // space, so keeping a few valuables is cheap and hoarding isn't.
+  { id: 'sentry_safe', kind: 'safe', name: 'SentrySafe', price: 500_000, space: 50 },
+  { id: 'liberty_safe', kind: 'safe', name: 'Liberty Safe', price: 2_500_000, space: 150 },
+  { id: 'fort_knox_safe', kind: 'safe', name: 'Fort Knox Safe', price: 10_000_000, space: 400 },
+  { id: 'swiss_bank_vault', kind: 'safe', name: 'Swiss Bank Vault', price: 40_000_000, space: 1_000 },
 ];
+
+// Sold by the box; each fits one gun. $5-50 a round, small next to the
+// ~$1,060 a big-game hunt brings in on average.
+export const AMMO = [
+  { id: 'ammo_22lr', name: '.22 LR Ammo', price: 25_000, rounds: 50 },
+  { id: 'ammo_12ga', name: '12 Gauge Shells', price: 50_000, rounds: 50 },
+  { id: 'ammo_308', name: '.308 Win Ammo', price: 100_000, rounds: 50 },
+  { id: 'ammo_50bmg', name: '.50 BMG Ammo', price: 250_000, rounds: 50 },
+];
+
+// Bought once, kept for good, never sold.
+export const LICENSES = [
+  { id: 'gun_license', name: 'Gun License', price: 50_000, needed: 'to buy a gun' },
+  { id: 'hunting_license', name: 'Hunting License', price: 100_000, needed: 'to hunt' },
+];
+
+export const ammoById = new Map(AMMO.map((a) => [a.id, a]));
+export const licenseById = new Map(LICENSES.map((l) => [l.id, l]));
 
 export const toolById = new Map(TOOLS.map((t) => [t.id, t]));
 
 // "1 cast used", "6 swings used".
 export const wear = (kind, uses) => `${uses} ${uses === 1 ? KINDS[kind].unit.slice(0, -1) : KINDS[kind].unit} used`;
+
+// Poles and pickaxes wear out; guns and safes don't.
+export const breakable = (tool) => tool.max !== undefined;
 
 // How good a tool is within its kind (0 = the cheapest).
 export const rankOf = (tool) => TOOLS.filter((t) => t.kind === tool.kind).indexOf(tool);

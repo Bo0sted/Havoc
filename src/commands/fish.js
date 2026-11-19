@@ -2,7 +2,7 @@ import { gatherCommand } from '../gather.js';
 
 export default gatherCommand({
   name: 'fish',
-  description: 'go fishing (needs a fishing pole from the shop; 1 energy); catches go in your Safety Deposit Box',
+  description: 'go fishing (needs a fishing pole from the shop; 1 energy); catches go in your Backpack',
   kind: 'pole',
   from: 'fish',
   verb: 'caught',

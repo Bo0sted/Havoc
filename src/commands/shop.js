@@ -1,19 +1,20 @@
 import { formatMoney } from '../items.js';
-import { KINDS, TOOLS, PROMOS, toolById, rankOf, wear, matchTools } from '../tools.js';
+import { KINDS, TOOLS, AMMO, LICENSES, PROMOS, toolById, ammoById, licenseById, rankOf, wear, breakable, matchTools } from '../tools.js';
 import { BOOSTS, energyOf, boosted } from '../energy.js';
 import { matchAnswer, optionsLine } from '../answers.js';
 import { claimGame } from '../games.js';
 import { formatWait } from '../duration.js';
 
-// Trading in a tool when upgrading is worth half of what's left of it.
+// Trading in a tool when upgrading is worth half of what's left of it
+// (guns and safes don't wear, so half their price).
 const TRADE_IN = 0.5;
-const tradeIn = (tool, uses) => Math.round(TRADE_IN * tool.price * (Math.max(0, tool.max - uses) / tool.max));
+const tradeIn = (tool, uses) => Math.round(TRADE_IN * tool.price * (breakable(tool) ? Math.max(0, tool.max - uses) / tool.max : 1));
 
 export default {
   name: 'shop',
   category: 'economy',
   usage: ['', '<number|name>', 'promo <name>'],
-  description: 'fishing poles, pickaxes, energy recovery and your promos; buy with `shop <number>` (or the item\'s name)',
+  description: 'fishing poles, pickaxes, licenses, guns, ammo, safes, energy recovery and your promos; buy with `shop <number>` (or the item\'s name)',
   cooldown: 5_000,
   economy: true,
   // Browsing has its own cooldown, so looking never holds up buying.
@@ -30,24 +31,27 @@ export default {
   },
 };
 
-// Items are numbered 1, 2, 3… straight down the list (poles, pickaxes, then recovery).
-const STOCK = [...TOOLS, ...BOOSTS];
+// Items are numbered 1, 2, 3… straight down the list, in this order.
+const kind = (k) => TOOLS.filter((t) => t.kind === k);
+const STOCK = [...kind('pole'), ...kind('pickaxe'), ...LICENSES, ...kind('gun'), ...AMMO, ...kind('safe'), ...BOOSTS];
 const numberOf = (item) => STOCK.indexOf(item) + 1;
 const gives = (boost) => (boost.energy === Infinity ? 'full energy' : `+${boost.energy} energy`);
+const gunFor = (ammo) => TOOLS.find((t) => t.ammo === ammo.id);
+const game = (gun) => (gun.big ? `small + big game (${gun.hospital}% hospital risk on big game)` : 'small game only');
 
 function list(prefix, user, server, db) {
-  const section = (kind, title) => [
-    `${KINDS[kind].emoji} **${title}**`,
-    ...TOOLS.filter((t) => t.kind === kind)
-      .map((t) => `**${numberOf(t)}.** ${t.name} · ${formatMoney(t.price)} · up to ${t.max} ${KINDS[kind].unit}`),
-  ];
+  const line = (item, text) => `**${numberOf(item)}.** ${item.name} · ${formatMoney(item.price)} · ${text}`;
+  const tools = (k) => kind(k).map((t) => line(t, `up to ${t.max} ${KINDS[k].unit}`));
   const promos = user ? PROMOS.filter((p) => !db.promoClaimed(server.key, user.id, p.id)) : [];
   return [
     `**Shop** (buy with \`${prefix}shop <number>\`, e.g. \`${prefix}shop 1\`)`,
-    ...section('pole', 'Fishing poles'),
-    ...section('pickaxe', 'Pickaxes'),
-    '⚡ **Recovery** (used right away, one an hour)',
-    ...BOOSTS.map((b) => `**${numberOf(b)}.** ${b.name} · ${formatMoney(b.price)} · ${gives(b)}`),
+    `${KINDS.pole.emoji} **Fishing poles**`, ...tools('pole'),
+    `${KINDS.pickaxe.emoji} **Pickaxes**`, ...tools('pickaxe'),
+    '🪪 **Licenses** (yours for good)', ...LICENSES.map((l) => line(l, `needed ${l.needed}`)),
+    `${KINDS.gun.emoji} **Guns** (never break; 1 round a hunt)`, ...kind('gun').map((g) => line(g, game(g))),
+    '📦 **Ammo**', ...AMMO.map((a) => line(a, `${a.rounds} rounds for the ${gunFor(a).name}`)),
+    `${KINDS.safe.emoji} **Safes** (room for things outside your Backpack)`, ...kind('safe').map((t) => line(t, `holds ${t.space.toLocaleString('en-US')} items`)),
+    '⚡ **Recovery** (used right away, one an hour)', ...BOOSTS.map((b) => line(b, gives(b))),
     ...(promos.length ? ['🎁 **Your promos**', ...promos.map((p) => `\`${prefix}shop promo ${p.id}\` ${p.label}`)] : []),
   ].join('\n');
 }
@@ -68,24 +72,54 @@ function buy(text, { prefix, user, server, db, reply, awaitAnswer }) {
     [tool] = found;
   }
   if (BOOSTS.includes(tool)) return buyBoost(tool, { user, server, db, reply, awaitAnswer });
+  if (LICENSES.includes(tool)) return buyLicense(tool, { user, server, db, reply });
+  if (AMMO.includes(tool)) return buyAmmo(tool, { prefix, user, server, db, reply });
   const { noun } = KINDS[tool.kind];
   const held = db.tool(server.key, user.id, tool.kind);
   const current = held && toolById.get(held.item);
 
-  if (current?.id === tool.id) return reply(`You already have a ${tool.name} (${wear(tool.kind, held.uses)}).`);
+  if (current?.id === tool.id) return reply(`You already have a ${tool.name}${breakable(tool) ? ` (${wear(tool.kind, held.uses)})` : ''}.`);
   if (current && rankOf(current) > rankOf(tool)) return reply(`You already have a better ${noun}: ${current.name}.`);
-
-  // An upgrade: the old tool is traded in for part of the price.
-  const credit = current ? tradeIn(current, held.uses) : 0;
-  const cost = tool.price - credit;
-  const balance = db.cents(server.key, user.id);
-  if (!db.buyTool(server.key, user.id, tool.kind, tool.id, cost)) {
-    return reply(`That costs ${formatMoney(cost)}. You only have ${formatMoney(balance)}.`);
+  if (tool.kind === 'gun' && !db.licenses(server.key, user.id).includes('gun_license')) {
+    return reply(`You need a Gun License to buy a gun. It's number ${numberOf(licenseById.get('gun_license'))} in the shop.`);
   }
+
+  // An upgrade: the old tool is traded in for part of the price. A gun's
+  // leftover ammo (which won't fit the new one) goes with it, at half price too.
+  const rounds = current?.kind === 'gun' ? db.ammo(server.key, user.id).get(current.ammo) ?? 0 : 0;
+  const ammo = current?.kind === 'gun' && ammoById.get(current.ammo);
+  const credit = current ? tradeIn(current, held.uses) + (rounds ? Math.round(TRADE_IN * rounds * ammo.price / ammo.rounds) : 0) : 0;
+  const cost = Math.max(0, tool.price - credit);
+  const balance = db.cents(server.key, user.id);
+  const bought = tool.kind === 'gun' ? db.buyGun(server.key, user.id, tool.id, cost) : db.buyTool(server.key, user.id, tool.kind, tool.id, cost);
+  if (!bought) return reply(`That costs ${formatMoney(cost)}. You only have ${formatMoney(balance)}.`);
   const now = formatMoney(db.cents(server.key, user.id));
+  const old = rounds ? `${current.name} (and ${rounds} ${rounds === 1 ? 'round' : 'rounds'})` : current?.name;
   return reply(credit
-    ? `🛒 You traded in your ${current.name} for ${formatMoney(credit)} and bought a ${tool.name} for ${formatMoney(cost)}. You now have ${now}.`
+    ? `🛒 You traded in your ${old} for ${formatMoney(credit)} and bought a ${tool.name} for ${formatMoney(cost)}. You now have ${now}.`
     : `🛒 You bought a ${tool.name} for ${formatMoney(cost)}. You now have ${now}.`);
+}
+
+function buyLicense(license, { user, server, db, reply }) {
+  if (db.licenses(server.key, user.id).includes(license.id)) return reply(`You already have a ${license.name}.`);
+  const balance = db.cents(server.key, user.id);
+  if (!db.buyLicense(server.key, user.id, license.id, license.price)) {
+    return reply(`That costs ${formatMoney(license.price)}. You only have ${formatMoney(balance)}.`);
+  }
+  return reply(`🪪 You bought a ${license.name} for ${formatMoney(license.price)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+}
+
+// Ammo only for the gun someone has: anything else wouldn't fit it.
+function buyAmmo(ammo, { prefix, user, server, db, reply }) {
+  const gun = toolById.get(db.tool(server.key, user.id, 'gun')?.item);
+  if (!gun) return reply(`That's ammo for the ${gunFor(ammo).name}, and you don't have a gun. Check \`${prefix}shop\`.`);
+  if (gun.ammo !== ammo.id) return reply(`That won't fit your ${gun.name}. It takes ${ammoById.get(gun.ammo).name} (number ${numberOf(ammoById.get(gun.ammo))}).`);
+  const balance = db.cents(server.key, user.id);
+  if (!db.buyAmmo(server.key, user.id, ammo.id, ammo.rounds, ammo.price)) {
+    return reply(`That costs ${formatMoney(ammo.price)}. You only have ${formatMoney(balance)}.`);
+  }
+  const rounds = db.ammo(server.key, user.id).get(ammo.id);
+  return reply(`📦 You bought ${ammo.rounds} rounds of ${ammo.name} for ${formatMoney(ammo.price)} (${rounds} now). You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
 
 const YES_NO = { y: 'yes', yeah: 'yes', yep: 'yes', sure: 'yes', ok: 'yes', okay: 'yes', n: 'no', nah: 'no', nope: 'no' };

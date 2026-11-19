@@ -7,7 +7,7 @@ export default {
   name: 'top',
   aliases: ['leaderboard'],
   category: 'economy',
-  description: 'the richest people here: money plus everything in their boxes',
+  description: 'the richest people here: money plus everything in their Backpacks and safes',
   cooldown: 30_000,
   economy: true,
   async run({ user, server, db, reply }) {

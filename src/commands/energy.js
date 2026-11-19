@@ -9,8 +9,11 @@ export default {
   description: 'energy settings here: the bar\'s size and how often it refills by 1',
   admin: true,
   async run({ prefix, args, server, db, commands, reply }) {
-    // The bar has to fit the most expensive action.
-    const costs = commands.filter((c) => c.energy);
+    // The bar has to fit the most expensive action. A command with modes
+    // (?hunt small / big) lists each one.
+    const costs = commands.flatMap((c) => (c.energies
+      ? Object.entries(c.energies).map(([mode, energy]) => ({ name: `${c.name} ${mode}`, energy }))
+      : c.energy ? [c] : []));
     const least = Math.max(...costs.map((c) => c.energy));
     const usage = `Usage: \`${prefix}energy <max> <X><sec|min|hr>\` (max ${least}-${MAX_LIMIT}; e.g. \`${prefix}energy 60 1min\`), or \`${prefix}energy reset\``;
     const describe = ({ max, every }) => {
