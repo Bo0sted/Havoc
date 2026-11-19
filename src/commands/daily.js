@@ -1,5 +1,6 @@
 import { formatMoney } from '../items.js';
 import { formatWait } from '../duration.js';
+import { gained } from '../colors.js';
 
 const DAY = 86_400_000;
 const BASE = 10_000; // $100 on day one...
@@ -27,6 +28,6 @@ export default {
     const cents = pays(streak);
     db.claimDaily(server.key, user.id, now, streak, cents);
     const fire = streak > 1 ? ` 🔥 ${streak}-day streak!` : prev?.streak > 1 ? ` Your ${prev.streak}-day streak ended.` : '';
-    return reply(`💵 **${user.name}** claimed ${formatMoney(cents)}!${fire} You now have ${formatMoney(db.cents(server.key, user.id))}.\nYour next daily will be **${formatMoney(pays(streak + 1))}** (come back in 24h, before 48h to keep your streak).`);
+    return reply(`💵 **${user.name}** claimed ${gained(cents)}!${fire} You now have ${formatMoney(db.cents(server.key, user.id))}.\nYour next daily will be **${formatMoney(pays(streak + 1))}** (come back in 24h, before 48h to keep your streak).`);
   },
 };

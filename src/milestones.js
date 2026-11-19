@@ -5,6 +5,7 @@
 // spamming cheap commands can't out-earn playing. Paid with the command
 // that reaches it; the congratulations is a separate, non-silent ping.
 import { formatMoney } from './items.js';
+import { gained } from './colors.js';
 
 const MILESTONES = [
   [10, 25_000], [50, 50_000], [100, 100_000], [250, 250_000], [500, 500_000],
@@ -36,6 +37,6 @@ export function countCommand(db, server, userId, now = Date.now()) {
   const next = nextAfter(total);
   const more = rewardAt(next) > reward ? 'an increased reward' : 'another reward';
   return (mention) => `Congrats ${mention}, you reached a milestone of ${total.toLocaleString('en-US')} economy commands. `
-    + `${formatMoney(reward)} has been automatically deposited into your bank account. `
+    + `${gained(reward)} has been automatically deposited into your bank account. `
     + `Your next milestone is ${next.toLocaleString('en-US')} commands, with ${more}.`;
 }

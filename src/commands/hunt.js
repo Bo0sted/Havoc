@@ -6,6 +6,7 @@ import { matchAnswer } from '../answers.js';
 import { pick, rollTier, backpackFull, foundLine } from '../gather.js';
 import { hospitalize } from '../hospital.js';
 import { label } from '../storage.js';
+import { gained, lost } from '../colors.js';
 
 // High risk, high reward: a Hunting License, a gun and 1 round per hunt.
 // Small game (any gun, 1 energy) pays a bit more than fishing with little
@@ -118,12 +119,12 @@ export default {
 // "Hospital bill: **$X**. You paid it in cash." and so on.
 function billLine({ bill, cash, taken, change, forgiven }) {
   if (!bill || forgiven === bill) return "The hospital let you off: you've got nothing to pay with.";
-  const head = `Hospital bill: **${formatMoney(bill)}**.`;
+  const head = `Hospital bill: **${lost(bill)}**.`;
   const rest = forgiven ? ` You couldn't cover the last ${formatMoney(forgiven)}, so the hospital let it go.` : '';
-  if (!taken.length) return `${head} You paid ${forgiven ? formatMoney(cash) : 'it'} in cash.${rest}`;
+  if (!taken.length) return `${head} You paid ${forgiven ? lost(cash) : 'it'} in cash.${rest}`;
   const items = taken.map((t) => label(itemById.get(t.item), t.qty)).join(', ');
-  const back = change ? ` (${formatMoney(change)} back in change)` : '';
+  const back = change ? ` (${gained(change)} back in change)` : '';
   return cash
-    ? `${head} You paid ${formatMoney(cash)} in cash and the hospital took ${items}${forgiven ? '' : ' for the rest'}${back}.${rest}`
+    ? `${head} You paid ${lost(cash)} in cash and the hospital took ${items}${forgiven ? '' : ' for the rest'}${back}.${rest}`
     : `${head} You had no cash, so the hospital took ${items}${back}.${rest}`;
 }

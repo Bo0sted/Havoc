@@ -3,6 +3,7 @@ import { formatMoney } from '../items.js';
 import { claimGame } from '../games.js';
 import { findTarget } from '../members.js';
 import { matchAnswer, optionsLine } from '../answers.js';
+import { green, red, gained, lost } from '../colors.js';
 
 const MIN = 10_000; // $100; there's no maximum
 const TIME = 10_000;
@@ -121,7 +122,7 @@ async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns
       const penalty = Math.max(1, Math.round(wager * TIMEOUT_PENALTY));
       settle(wager - penalty, 'timeout');
       wait(TIMEOUT_COOLDOWN);
-      return edit(`⌛ Timed out, bet cancelled. 5% penalty: -${formatMoney(penalty)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+      return edit(`⌛ Timed out, bet cancelled. 5% penalty: ${red(`-${formatMoney(penalty)}`)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
     }
 
     const [result, line] = game.judge(matchAnswer(answer, game.options, game.aliases), mine);
@@ -129,9 +130,9 @@ async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns
     settle(back, result);
     wait(game.cooldown[result]);
     const outcome = {
-      win: `Congrats! +${formatMoney(back - wager)}.`,
+      win: `Congrats! ${green(`+${formatMoney(back - wager)}`)}.`,
       tie: `It's a tie, your ${formatMoney(wager)} is back.`,
-      lose: `Sorry, you lost ${formatMoney(wager)}.`,
+      lose: `Sorry, you lost ${lost(wager)}.`,
     }[result];
     return edit(`${line} ${outcome} You now have ${formatMoney(db.cents(server.key, user.id))}.`);
   } catch (err) {
@@ -143,7 +144,7 @@ async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns
 
 const pct = (n, of) => (!n || !of ? '0%' : n / of < 0.01 ? '<1%' : `${Math.round((n / of) * 100)}%`);
 const signedPct = (x) => `${x >= 0 ? '+' : ''}${Math.round(x * 100)}%`;
-const signed = (cents) => (cents ? `${cents < 0 ? '-' : '+'}${formatMoney(Math.abs(cents))}` : formatMoney(0));
+const signed = (cents) => (cents ? (cents < 0 ? red : green)(`${cents < 0 ? '-' : '+'}${formatMoney(Math.abs(cents))}`) : formatMoney(0));
 
 async function showRecord({ args, user, server, db, findMember, reply, notHere }) {
   let who = user;
@@ -161,7 +162,7 @@ async function showRecord({ args, user, server, db, findMember, reply, notHere }
   if (!bets) return reply(`${whose} never placed a bet. \`?bet\` shows the games.`);
 
   const [wins, losses, ties, timeouts] = ['wins', 'losses', 'ties', 'timeouts'].map(sum);
-  const [wagered, won, lost] = ['wagered', 'won', 'lost'].map(sum);
+  const [wagered, won, lostTotal] = ['wagered', 'won', 'lost'].map(sum);
   const biggest = Math.max(...rows.map((r) => r.biggest_win));
 
   // Luck: real wins against what the odds expected, once there's enough to go on.
@@ -176,8 +177,8 @@ async function showRecord({ args, user, server, db, findMember, reply, notHere }
     `**${who.name}'s betting record**`,
     `${bets} bet${bets === 1 ? '' : 's'} · ${formatMoney(wagered)} wagered`,
     results.join(' · '),
-    `${formatMoney(won)} won · ${formatMoney(lost)} lost · Net **${signed(won - lost)}**`,
-    `Biggest win ${formatMoney(biggest)}${luck}`,
+    `${gained(won)} won · ${lost(lostTotal)} lost · Net **${signed(won - lostTotal)}**`,
+    `Biggest win ${gained(biggest)}${luck}`,
   ];
   return reply(lines.join('\n'));
 }

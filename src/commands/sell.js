@@ -1,6 +1,7 @@
 import { formatMoney } from '../items.js';
 import { findTool } from '../tools.js';
 import { TIERS, choose, describe } from '../storage.js';
+import { gained } from '../colors.js';
 
 export default {
   name: 'sell',
@@ -37,5 +38,5 @@ export function sellFrom(place, args, { prefix, user, server, db, reply }) {
   const cents = lots.reduce((sum, l) => sum + l.item.price * l.qty, 0);
   const ok = db.sell(server.key, user.id, lots.map((l) => ({ item: l.item.id, qty: l.qty })), cents, place);
   if (!ok) return reply(`Your ${box} changed while I was counting. Try again.`);
-  return reply(`💰 Sold ${describe(lots)} for ${formatMoney(cents)}. You now have ${formatMoney(db.cents(server.key, user.id))}.${kept}`);
+  return reply(`💰 Sold ${describe(lots)} for ${gained(cents)}. You now have ${formatMoney(db.cents(server.key, user.id))}.${kept}`);
 }

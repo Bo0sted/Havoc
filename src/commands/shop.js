@@ -4,6 +4,7 @@ import { BOOSTS, energyOf, boosted } from '../energy.js';
 import { matchAnswer, optionsLine } from '../answers.js';
 import { claimGame } from '../games.js';
 import { formatWait } from '../duration.js';
+import { green, gained, lost } from '../colors.js';
 
 // Trading in a tool when upgrading is worth half of what's left of it
 // (guns and safes don't wear, so half their price).
@@ -39,8 +40,23 @@ const gives = (boost) => (boost.energy === Infinity ? 'full energy' : `+${boost.
 const gunFor = (ammo) => TOOLS.find((t) => t.ammo === ammo.id);
 const game = (gun) => (gun.big ? `small + big game (${gun.hospital}% hospital risk on big game)` : 'small game only');
 
+// What someone already has (their tools, licenses and ammo with rounds
+// left) is listed in green.
+function owned(user, server, db) {
+  if (!user) return new Set();
+  return new Set([
+    ...db.tools(server.key, user.id).map((t) => t.item),
+    ...db.licenses(server.key, user.id),
+    ...db.ammo(server.key, user.id).keys(),
+  ]);
+}
+
 function list(prefix, user, server, db) {
-  const line = (item, text) => `**${numberOf(item)}.** ${item.name} · ${formatMoney(item.price)} · ${text}`;
+  const mine = owned(user, server, db);
+  const line = (item, text) => {
+    const rest = `${item.name} · ${formatMoney(item.price)} · ${text}`;
+    return `**${numberOf(item)}.** ${mine.has(item.id) ? green(rest) : rest}`;
+  };
   const tools = (k) => kind(k).map((t) => line(t, `up to ${t.max} ${KINDS[k].unit}`));
   const promos = user ? PROMOS.filter((p) => !db.promoClaimed(server.key, user.id, p.id)) : [];
   return [
@@ -96,8 +112,8 @@ function buy(text, { prefix, user, server, db, reply, awaitAnswer }) {
   const now = formatMoney(db.cents(server.key, user.id));
   const old = rounds ? `${current.name} (and ${rounds} ${rounds === 1 ? 'round' : 'rounds'})` : current?.name;
   return reply(credit
-    ? `🛒 You traded in your ${old} for ${formatMoney(credit)} and bought a ${tool.name} for ${formatMoney(cost)}. You now have ${now}.`
-    : `🛒 You bought a ${tool.name} for ${formatMoney(cost)}. You now have ${now}.`);
+    ? `🛒 You traded in your ${old} for ${gained(credit)} and bought a ${tool.name} for ${lost(cost)}. You now have ${now}.`
+    : `🛒 You bought a ${tool.name} for ${lost(cost)}. You now have ${now}.`);
 }
 
 function buyLicense(license, { user, server, db, reply }) {
@@ -106,7 +122,7 @@ function buyLicense(license, { user, server, db, reply }) {
   if (!db.buyLicense(server.key, user.id, license.id, license.price)) {
     return reply(`That costs ${formatMoney(license.price)}. You only have ${formatMoney(balance)}.`);
   }
-  return reply(`🪪 You bought a ${license.name} for ${formatMoney(license.price)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+  return reply(`🪪 You bought a ${license.name} for ${lost(license.price)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
 
 // Ammo only for the gun someone has: anything else wouldn't fit it.
@@ -119,7 +135,7 @@ function buyAmmo(ammo, { prefix, user, server, db, reply }) {
     return reply(`That costs ${formatMoney(ammo.price)}. You only have ${formatMoney(balance)}.`);
   }
   const rounds = db.ammo(server.key, user.id).get(ammo.id);
-  return reply(`📦 You bought ${ammo.rounds} rounds of ${ammo.name} for ${formatMoney(ammo.price)} (${rounds} now). You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+  return reply(`📦 You bought ${ammo.rounds} rounds of ${ammo.name} for ${lost(ammo.price)} (${rounds} now). You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
 
 const YES_NO = { y: 'yes', yeah: 'yes', yep: 'yes', sure: 'yes', ok: 'yes', okay: 'yes', n: 'no', nah: 'no', nope: 'no' };
@@ -157,7 +173,7 @@ async function buyBoost(boost, { user, server, db, reply, awaitAnswer }) {
   const now = Date.now();
   const { points } = boosted(bar, boost);
   if (!db.buyBoost(server.key, user.id, boost.price, points, points >= bar.max ? now : bar.since, now)) return reply(refused(bar));
-  return reply(`⚡ You bought ${/^[aeiou]/i.test(boost.name) ? 'an' : 'a'} ${boost.name} for ${formatMoney(boost.price)}. Energy: ${points}/${bar.max}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+  return reply(`⚡ You bought ${/^[aeiou]/i.test(boost.name) ? 'an' : 'a'} ${boost.name} for ${lost(boost.price)}. Energy: ${points}/${bar.max}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
 
 function redeem(text, { user, server, db, reply }) {
@@ -173,7 +189,7 @@ function redeem(text, { user, server, db, reply }) {
   if (current) {
     if (!db.claimPromoCash(server.key, user.id, promo.id, tool.price)) return reply('You already claimed that promo.');
     const better = rankOf(current) > rankOf(tool) ? 'better ' : '';
-    return reply(`🎁 You already have a ${better}${KINDS[tool.kind].noun}, so here's ${formatMoney(tool.price)} instead! You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+    return reply(`🎁 You already have a ${better}${KINDS[tool.kind].noun}, so here's ${gained(tool.price)} instead! You now have ${formatMoney(db.cents(server.key, user.id))}.`);
   }
   if (!db.claimPromoTool(server.key, user.id, promo.id, tool.kind, tool.id)) return reply('You already claimed that promo.');
   return reply(`🎁 Enjoy your free ${tool.name}! ${promo.message}`);

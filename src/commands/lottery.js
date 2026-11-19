@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import { formatMoney } from '../items.js';
 import { claimGame } from '../games.js';
 import { matchAnswer, optionsLine } from '../answers.js';
+import { green } from '../colors.js';
 
 // Simple, friendly nouns; each round shows CHOICES of them. The odds only
 // depend on CHOICES (1 in 4), never on how long this list is.
@@ -57,7 +58,7 @@ export default {
         db.lotteryWin(server.key, user.id, streak + 1, cents);
         cooldowns.setRemaining(server.key, cmd, user.id, WIN_COOLDOWN);
         const row = streak ? ` That's ${streak + 1} in a row!` : '';
-        return edit(`🎉 Congrats **${user.name}**, the word was **${answer}**! +${formatMoney(cents)}.${row} Your next win pays **${formatMoney(pays(streak + 1))}**.`);
+        return edit(`🎉 Congrats **${user.name}**, the word was **${answer}**! ${green(`+${formatMoney(cents)}`)}.${row} Your next win pays **${formatMoney(pays(streak + 1))}**.`);
       }
 
       db.lotteryLoss(server.key, user.id);

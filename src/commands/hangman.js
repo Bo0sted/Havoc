@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import { formatMoney } from '../items.js';
 import { claimGame } from '../games.js';
 import { WORDS } from '../words.js';
+import { green, red, lost } from '../colors.js';
 
 const SECONDS_PER_LETTER = 7; // one shared timer: 7s × the word's length
 const PER_LETTER = 10_000; // $100 per letter, and $100 off for each try used
@@ -50,7 +51,7 @@ export default {
       const finish = (text, ms) => { done = true; wait(ms); return edit(text); };
       const penalise = () => {
         const taken = db.takeUpTo(server.key, user.id, Math.round(len * PER_LETTER * PENALTY));
-        return `${taken ? ` -${formatMoney(taken)} penalty.` : ''} You now have ${formatMoney(db.cents(server.key, user.id))}.`;
+        return `${taken ? ` ${red(`-${formatMoney(taken)}`)} penalty.` : ''} You now have ${formatMoney(db.cents(server.key, user.id))}.`;
       };
 
       // A guess is one word (or one letter), edge punctuation ignored; anything with spaces is ordinary chat.
@@ -65,7 +66,7 @@ export default {
           const taken = db.takeUpTo(server.key, user.id, Math.round(len * PER_LETTER * PENALTY));
           const now = formatMoney(db.cents(server.key, user.id));
           return finish(taken
-            ? `You quit. The word was **${word}**. I'm keeping ${formatMoney(taken)} for wasting my time. You now have ${now}.`
+            ? `You quit. The word was **${word}**. I'm keeping ${lost(taken)} for wasting my time. You now have ${now}.`
             : `You quit. The word was **${word}**. I'd charge you for wasting my time, but you're broke.`, LOSS_COOLDOWN);
         }
 
@@ -93,7 +94,7 @@ export default {
         if (shown.every(Boolean)) {
           const won = payout();
           db.addCents(server.key, user.id, won);
-          return finish(`🎉 Correct! The word was **${word}**. +${formatMoney(won)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`, WIN_COOLDOWN);
+          return finish(`🎉 Correct! The word was **${word}**. ${green(`+${formatMoney(won)}`)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`, WIN_COOLDOWN);
         }
         used += 1;
         if (used < len) await edit(render());
