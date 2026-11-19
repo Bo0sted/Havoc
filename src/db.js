@@ -51,6 +51,14 @@ const SCHEMA = `
     server TEXT NOT NULL, user_id INTEGER NOT NULL, item TEXT NOT NULL, qty INTEGER NOT NULL,
     PRIMARY KEY (server, user_id, item)
   );
+  CREATE TABLE IF NOT EXISTS energy (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, points INTEGER NOT NULL, since INTEGER NOT NULL,
+    boosted INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (server, user_id)
+  );
+  CREATE TABLE IF NOT EXISTS energy_settings (
+    server TEXT NOT NULL PRIMARY KEY, max INTEGER NOT NULL, every INTEGER NOT NULL
+  );
 `;
 
 export function openDb(path) {
@@ -100,6 +108,12 @@ export function openDb(path) {
     promoClaimed: q('SELECT 1 FROM promo_claims WHERE server = ? AND user_id = ? AND promo = ?'),
     takeItem: q('UPDATE items SET qty = qty - ? WHERE server = ? AND user_id = ? AND item = ? AND qty >= ?'),
     addCents: q('INSERT INTO wallets (server, user_id, cents) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET cents = cents + excluded.cents'),
+    energy: q('SELECT points, since, boosted FROM energy WHERE server = ? AND user_id = ?'),
+    setEnergy: q('INSERT INTO energy (server, user_id, points, since) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET points = excluded.points, since = excluded.since'),
+    boost: q('INSERT INTO energy (server, user_id, points, since, boosted) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET points = excluded.points, since = excluded.since, boosted = excluded.boosted'),
+    energySettings: q('SELECT max, every FROM energy_settings WHERE server = ?'),
+    setEnergySettings: q('INSERT INTO energy_settings (server, max, every) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET max = excluded.max, every = excluded.every'),
+    clearEnergySettings: q('DELETE FROM energy_settings WHERE server = ?'),
   };
 
   // Runs fn inside one transaction: everything in it lands, or nothing does
@@ -220,6 +234,22 @@ export function openDb(path) {
     }),
     lotteryLoss: (server, userId) => s.setLotteryStreak.run(server, userId, 0),
     addItem: (server, userId, item, qty = 1) => s.addItem.run(server, userId, item, qty),
+    // Energy for ?fish and ?mine ({ points, since, boosted } or null: never
+    // used, so full). The bar itself is worked out in energy.js.
+    energy: (server, userId) => s.energy.get(server, userId) ?? null,
+    setEnergy: (server, userId, points, since) => s.setEnergy.run(server, userId, points, since),
+    // Pays for a recovery item and applies it. False, and nothing changes,
+    // if they can't afford it.
+    buyBoost: (server, userId, cost, points, since, at) => atomic(() => {
+      if (s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
+      s.boost.run(server, userId, points, since, at);
+      return true;
+    }),
+    // An admin's energy settings for the server ({ max, every }), or null for the defaults.
+    energySettings: (server) => s.energySettings.get(server) ?? null,
+    setEnergySettings: (server, max, every) => s.setEnergySettings.run(server, max, every),
+    // True when there were settings to remove.
+    clearEnergySettings: (server) => s.clearEnergySettings.run(server).changes > 0,
     // Removes each { item, qty } from the box and pays `cents` for the lot.
     // False (and nothing changes) when any of them isn't there in full.
     sell: (server, userId, lots, cents) => atomic(() => {
