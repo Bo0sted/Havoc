@@ -95,6 +95,10 @@ const SCHEMA = `
     server TEXT NOT NULL, user_id INTEGER NOT NULL, until INTEGER NOT NULL,
     PRIMARY KEY (server, user_id)
   );
+  CREATE TABLE IF NOT EXISTS own_messages (
+    server TEXT NOT NULL, message_id INTEGER NOT NULL, at INTEGER NOT NULL,
+    PRIMARY KEY (server, message_id)
+  );
   CREATE TABLE IF NOT EXISTS wheel_spins (
     server TEXT NOT NULL, user_id INTEGER NOT NULL,
     since INTEGER NOT NULL, free_used INTEGER NOT NULL, paid INTEGER NOT NULL,
@@ -172,6 +176,10 @@ export function openDb(path) {
     jailedUntil: q('SELECT until FROM jail WHERE server = ? AND user_id = ?'),
     jail: q('INSERT INTO jail (server, user_id, until) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET until = excluded.until'),
     purgeJail: q('DELETE FROM jail WHERE until <= ?'),
+    rememberOwn: q('INSERT OR IGNORE INTO own_messages (server, message_id, at) VALUES (?, ?, ?)'),
+    ownsMessage: q('SELECT 1 FROM own_messages WHERE server = ? AND message_id = ?'),
+    forgetOwn: q('DELETE FROM own_messages WHERE server = ? AND message_id = ?'),
+    purgeOwn: q('DELETE FROM own_messages WHERE at <= ?'),
     wheelSpins: q('SELECT since, free_used, paid FROM wheel_spins WHERE server = ? AND user_id = ?'),
     setWheelSpins: q('INSERT INTO wheel_spins (server, user_id, since, free_used, paid) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET since = excluded.since, free_used = excluded.free_used, paid = excluded.paid'),
     setEnergy: q('INSERT INTO energy (server, user_id, points, since) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET points = excluded.points, since = excluded.since'),
@@ -406,6 +414,12 @@ export function openDb(path) {
     jailedUntil: (server, userId) => s.jailedUntil.get(server, userId)?.until ?? 0,
     jail: (server, userId, until) => s.jail.run(server, userId, until),
     purgeJail: (now = Date.now()) => s.purgeJail.run(now),
+    // Havoc's own messages (ids, kept OWN_DAYS) so an admin's 👎 can only ever
+    // delete one of those, never a player's.
+    rememberOwnMessage: (server, messageId, at = Date.now()) => s.rememberOwn.run(server, messageId, at),
+    ownsMessage: (server, messageId) => !!s.ownsMessage.get(server, messageId),
+    forgetOwnMessage: (server, messageId) => s.forgetOwn.run(server, messageId),
+    purgeOwnMessages: (before) => s.purgeOwn.run(before),
     // Someone's ?wheel day ({ since, free_used, paid } or null): when their
     // first free spin of it was, and how many free and paid spins since.
     wheelSpins: (server, userId) => s.wheelSpins.get(server, userId) ?? null,

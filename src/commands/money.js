@@ -62,8 +62,12 @@ export default {
   },
 };
 
-// The newer commands, at the bottom, so people find them.
-const tips = (p) => `💡 \`${p}value <item>\` an item's rarity and price · \`${p}charm list\` what charms do · \`${p}wheel\` free spins every day · \`${p}stats extra\` what you earned where · \`${p}give off\` stop gifts to you`;
+// Pointers to the commands people miss, at the bottom (owner's wording).
+const tips = (p) => [
+  `Pro tip: \`${p}value <item>\` an item's rarity and price`,
+  `\`${p}charm list\` what every charm does`,
+  `\`${p}stats extra\` more fun numbers`,
+].join('\n');
 
 // "⚡ Energy: 9/60 (Fully recovered at 3:42 PM)", as a Haven timestamp so
 // everyone reads it in their own time zone; just "60/60" when full. During

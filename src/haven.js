@@ -139,6 +139,10 @@ export class HavenClient extends EventEmitter {
     });
 
     this.socket.on('message-edited', (e) => this.emit('edited', e?.messageId));
+    // Who has reacted with what on a message: the whole list, every time it changes.
+    this.socket.on('reactions-updated', (e) => {
+      if (e?.messageId && Array.isArray(e.reactions)) this.emit('reactions', e);
+    });
     this.socket.on('status-updated', (s) => this.emit('status', s));
 
     // Replies inside a forum topic, or in a thread on an ordinary message.
@@ -223,6 +227,11 @@ export class HavenClient extends EventEmitter {
       this.on('edited', onEdited);
       this.socket.emit('edit-message', { channelCode, messageId, content });
     });
+  }
+
+  // Deletes one of Havoc's messages (Haven checks it's ours).
+  deleteMessage(channelCode, messageId) {
+    this.socket?.emit('delete-message', { channelCode, messageId });
   }
 
   // avatar: undefined = not known yet, null = has none.
