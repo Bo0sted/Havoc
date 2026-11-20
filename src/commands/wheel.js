@@ -3,7 +3,7 @@ import { ITEMS, itemById, formatMoney } from '../items.js';
 import { WHEELS } from '../wheel.js';
 import { spinGif, REVEAL } from '../wheel-gif.js';
 import { claimGame } from '../games.js';
-import { placeOf, worthOf } from '../storage.js';
+import { placeOf } from '../storage.js';
 import { hospitalize, takeable, billLine } from '../hospital.js';
 import { surge, energyOf } from '../energy.js';
 import { charmsOf, givesCharm, charmName, TYPES, SEVERITIES } from '../charms.js';
@@ -19,7 +19,6 @@ const FREE = 2;
 const PAID = 500_000; // $5,000, doubled for each paid spin already bought today
 const priceOf = (bought) => PAID * 2 ** bought;
 const stamp = (ms) => Math.ceil(ms / 1000);
-const HOSPITAL_CAP = 2_500_000; // the paid wheel's hospital bill tops out at $25,000
 // Money lost to the wheel is collected like a hospital bill (cash, then
 // items, the rest forgiven), so keeping your cash low doesn't dodge it.
 const DEBT = { title: 'You owe', by: 'the debt collector' };
@@ -137,13 +136,12 @@ function land(slice, ctx) {
       return { text: taken ? `🧾 IRS audit! They took ${lost(taken)} (${Math.round(slice.rate * 100)}% of your cash, ${formatMoney(slice.max)} at most).` : '🧾 The IRS audited you and felt sorry for you. Lucky escape!' };
     }
     case 'snake': {
-      const bill = Math.min(Math.round(worthOf(db, server.key, user.id) * slice.rate), slice.max);
-      const paid = db.payBill(server.key, user.id, bill, takeable);
-      track.lost('wheel', bill - paid.forgiven);
-      return { text: `🐍 A snake bit you. ${billLine({ bill, ...paid })}` };
+      const paid = hospitalize(db, server.key, user.id, slice.scale);
+      track.lost('wheel', paid.bill - paid.forgiven);
+      return { text: `🐍 A snake bit you. ${billLine(paid)}` };
     }
     case 'hospital': {
-      const paid = hospitalize(db, server.key, user.id, HOSPITAL_CAP);
+      const paid = hospitalize(db, server.key, user.id);
       track.lost('wheel', paid.bill - paid.forgiven);
       return { text: `🏥 You fell off the wheel. ${billLine(paid)}` };
     }
@@ -225,8 +223,8 @@ function odds() {
     lose: () => `${s.emoji} Lose ${formatMoney(s.cents)} (cash first, then items)`,
     flip: () => `${s.emoji} Coin flip: win or lose ${formatMoney(s.cents)}`,
     irs: () => `${s.emoji} IRS audit: ${Math.round(s.rate * 100)}% of your cash (up to ${formatMoney(s.max)})`,
-    snake: () => `${s.emoji} Snake bite: a ${Math.round(s.rate * 100)}% hospital bill (up to ${formatMoney(s.max)})`,
-    hospital: () => `${s.emoji} Hospital: a big-game hospital bill (up to ${formatMoney(HOSPITAL_CAP)})`,
+    snake: () => `${s.emoji} Snake bite: a hospital bill, ${s.scale * 100}% of a hunting one`,
+    hospital: () => `${s.emoji} Hospital: a hunting-sized hospital bill`,
     pickpocket: () => `${s.emoji} Pickpocket: lose a random Backpack item (never a legendary)`,
     robbed: () => `${s.emoji} Robbed: lose your best Backpack item (never a legendary)`,
     items: () => `${s.emoji} ${s.count > 1 ? `${s.count} ${s.tier} items` : `${/^[aeiou]/.test(s.tier) ? 'An' : 'A'} ${s.tier} item`}`,

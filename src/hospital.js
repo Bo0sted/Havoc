@@ -18,19 +18,19 @@ export function takeable(id) {
   return item && !item.retired && rank >= 0 ? { price: item.price, rank } : null;
 }
 
-// Rates are drawn in hundredths of a percent.
-export function hospitalBill(worth) {
+// Rates are drawn in hundredths of a percent. `scale` shrinks the whole
+// bill for smaller injuries (?wheel's snake bite is a quarter of one).
+export function hospitalBill(worth, scale = 1) {
   const low = Math.min(worth, BRACKET);
   const high = Math.max(0, worth - BRACKET);
-  return Math.round((low * randomInt(100, 401) + high * randomInt(800, 1001)) / 10_000);
+  return Math.round(((low * randomInt(100, 401) + high * randomInt(800, 1001)) / 10_000) * scale);
 }
 
 // Bills someone and collects it: cash, then Backpack items, then safe
 // items; anything left over is forgiven. Returns { bill, cash, taken,
 // change, forgiven } (see db.payBill).
-// `cap` limits the bill (?wheel's hospital slice).
-export function hospitalize(db, server, userId, cap = Infinity) {
-  const bill = Math.min(hospitalBill(worthOf(db, server, userId)), cap);
+export function hospitalize(db, server, userId, scale = 1) {
+  const bill = hospitalBill(worthOf(db, server, userId), scale);
   return { bill, ...db.payBill(server, userId, bill, takeable) };
 }
 

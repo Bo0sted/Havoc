@@ -24,7 +24,7 @@ export const WHEELS = {
     { emoji: '💵', label: '$500', color: C.cash, kind: 'cash', cents: 50_000 },
     { emoji: '💀', label: 'MILD', color: C.misfortune, kind: 'charm', type: 'misfortune', severity: 'mild' },
     { emoji: '⚡', label: 'ENERGY', color: C.good, kind: 'surge' },
-    { emoji: '🐍', label: 'SNAKE', color: C.bad, kind: 'snake', rate: 0.01, max: 200_000 },
+    { emoji: '🐍', label: 'SNAKE', color: C.bad, kind: 'snake', scale: 0.25 },
     { emoji: '🍀', label: 'STRONG', color: C.lucky, kind: 'charm', type: 'lucky', severity: 'strong' },
     { emoji: '💵', label: '$1,000', color: C.cash, kind: 'cash', cents: 100_000 },
     { emoji: '🚔', label: 'JAIL', color: C.bad, kind: 'jail', ms: 10 * MIN },
