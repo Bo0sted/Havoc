@@ -34,6 +34,7 @@ export default {
       `Net Worth: ${gained(worthOf(db, server.key, who.id))}`,
       energyLine(energyOf(db, server.key, who.id)),
       `Privileges: ${licenses.length ? licenses.join(' · ') : 'None'}`,
+      `Profile Settings: Gifts ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'}`,
     ];
 
     // Tools in shop order (poles, pickaxes, guns); the safe is listed under Assets.
@@ -53,9 +54,7 @@ export default {
       assets.push(`${KINDS.safe.emoji} ${safe.name} (${box.used}/${box.space}): ${contents(box.rows)}`);
     }
 
-    const settings = ['**Profile Settings**', `Gifts: ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'}`];
-
-    return reply(`${header}${overview.join('\n')}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}\n\n${settings.join('\n')}`);
+    return reply(`${header}${overview.join('\n')}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}`);
   },
 };
 
