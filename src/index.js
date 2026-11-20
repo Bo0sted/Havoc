@@ -7,6 +7,7 @@ import { valueOf } from './items.js';
 import { createCooldowns } from './cooldowns.js';
 import { createRouter } from './router.js';
 import commands from './commands/index.js';
+import { warmUp } from './wheel-gif.js';
 
 const PREFIX = process.env.PREFIX || 'h!';
 const DB_PATH = process.env.DB_PATH || new URL('../havoc.db', import.meta.url).pathname;
@@ -33,6 +34,9 @@ const db = openDb(DB_PATH);
 db.seedEarnings(valueOf);
 const cooldowns = createCooldowns(db);
 const router = createRouter({ prefix: PREFIX, commands, servers, db, cooldowns });
+
+// Draws any wheel GIFs that aren't drawn yet, in the background (once; they're kept).
+warmUp().catch((err) => console.error('[wheel] Warm-up failed:', err));
 
 // Expired guest blocks and stale cooldowns are cleared out hourly.
 setInterval(() => {

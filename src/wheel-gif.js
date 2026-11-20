@@ -3,11 +3,13 @@
 // and creeps onto the slice it lands on, under a pointer on the right. It
 // plays once (about 6 seconds) and stays on the result.
 //
-// Only a few spins per slice are ever drawn (VARIANTS), each saved in
-// out/wheel the first time it's needed, so a spin costs nothing to draw after
-// that. Drawing takes a few seconds on a small server, so it happens on a
-// worker thread and the bot keeps answering everyone else meanwhile.
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+// Only a few spins per slice are ever drawn (VARIANTS), saved in out/wheel
+// and shared by everyone. warmUp() draws any that are missing when the bot
+// starts (and deletes ones from an older wheel), one at a time; a spin that
+// needs one before then has it drawn on the spot. Drawing takes a few seconds
+// on a small server, so it happens on a worker thread and the bot keeps
+// answering everyone else meanwhile.
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
 import { randomInt } from 'node:crypto';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import sharp from 'sharp';
@@ -57,12 +59,15 @@ async function overlay() {
   return sharp(Buffer.from(svg)).ensureAlpha().raw().toBuffer();
 }
 
+// Whether a wheel's art was drawn from the slices it has now.
+const artMatches = (name) =>
+  JSON.parse(readFileSync(new URL(`${name}.json`, ASSETS), 'utf8')).fingerprint === artFingerprint(WHEELS[name]);
+
 const loaded = new Map();
 // A wheel's art as raw RGBA, checked against the slices it should show.
 async function art(name) {
   if (loaded.has(name)) return loaded.get(name);
-  const { fingerprint } = JSON.parse(readFileSync(new URL(`${name}.json`, ASSETS), 'utf8'));
-  if (fingerprint !== artFingerprint(WHEELS[name])) {
+  if (!artMatches(name)) {
     throw new Error(`assets/wheel/${name}.png doesn't match the ${name} wheel's slices: run npm run wheel-art`);
   }
   const pixels = await sharp(readFileSync(new URL(`${name}.png`, ASSETS))).ensureAlpha().raw().toBuffer();
@@ -134,21 +139,78 @@ export async function render(name, index, variant) {
   return Buffer.from(gif.bytes());
 }
 
-// A spin of `name` landing on slice `index`: { key, gif } where `key` names
-// this exact GIF (for upload caching). Drawn once per variant, then read from out/wheel.
-export async function spinGif(name, index) {
-  const variant = randomInt(VARIANTS.length);
-  const key = `${name}-${index}-${variant}-${artFingerprint(WHEELS[name])}`;
-  const file = new URL(`${key}.gif`, CACHE);
-  if (existsSync(file)) return { key, gif: () => readFileSync(file) };
-  const gif = await new Promise((resolve, reject) => {
+// A GIF's name: the wheel, slice and variant, and the wheel's fingerprint,
+// so a changed wheel never reuses an old picture.
+const keyOf = (name, index, variant) => `${name}-${index}-${variant}-${artFingerprint(WHEELS[name])}`;
+const fileOf = (key) => new URL(`${key}.gif`, CACHE);
+const ready = (key) => existsSync(fileOf(key));
+
+// Draws one GIF on a worker thread into out/wheel. It's written to a temp
+// file and renamed when complete, so a restart mid-drawing never leaves a
+// broken GIF behind. Asking again while it's being drawn waits for that one.
+const drawing = new Map();
+function draw(name, index, variant) {
+  const key = keyOf(name, index, variant);
+  if (ready(key)) return Promise.resolve();
+  if (drawing.has(key)) return drawing.get(key);
+  const job = new Promise((resolve, reject) => {
     const worker = new Worker(new URL(import.meta.url), { workerData: { name, index, variant }, execArgv: [] });
     worker.once('message', (bytes) => resolve(Buffer.from(bytes)));
     worker.once('error', reject);
-  });
+  }).then((gif) => {
+    mkdirSync(CACHE, { recursive: true });
+    const temp = new URL(`${key}.gif.tmp`, CACHE);
+    writeFileSync(temp, gif);
+    renameSync(temp, fileOf(key));
+  }).finally(() => drawing.delete(key));
+  drawing.set(key, job);
+  return job;
+}
+
+// A spin of `name` landing on slice `index`: { key, gif } where `key` names
+// this exact GIF (for upload caching). Any variant that's already drawn is
+// used; only when none is, one is drawn on the spot, after `waiting()` (so
+// the player can be told it takes a few seconds).
+export async function spinGif(name, index, waiting) {
+  const keys = VARIANTS.map((_, v) => keyOf(name, index, v));
+  const drawn = keys.filter(ready);
+  let key = drawn[randomInt(drawn.length || 1)];
+  if (!key) {
+    const variant = randomInt(VARIANTS.length);
+    key = keys[variant];
+    await waiting?.();
+    await draw(name, index, variant);
+  }
+  return { key, gif: () => readFileSync(fileOf(key)) };
+}
+
+// At start-up: deletes GIFs that aren't part of the wheels any more (an
+// older version, or half-written by a restart), then draws every missing
+// one, one at a time. A restart part-way just carries on from there.
+export async function warmUp() {
   mkdirSync(CACHE, { recursive: true });
-  writeFileSync(file, gif);
-  return { key, gif: () => gif };
+  const wheels = Object.keys(WHEELS).filter((name) => {
+    if (artMatches(name)) return true;
+    console.error(`[wheel] assets/wheel/${name}.png doesn't match the ${name} wheel's slices: run npm run wheel-art`);
+    return false;
+  });
+  const all = wheels.flatMap((name) => WHEELS[name].flatMap((_, index) => VARIANTS.map((__, variant) => ({ name, index, variant }))));
+  const wanted = new Set(all.map(({ name, index, variant }) => `${keyOf(name, index, variant)}.gif`));
+  const stale = readdirSync(CACHE).filter((file) => !wanted.has(file));
+  for (const file of stale) unlinkSync(new URL(file, CACHE));
+  if (stale.length) console.log(`[wheel] Deleted ${stale.length} old or unfinished wheel GIFs.`);
+
+  const missing = all.filter(({ name, index, variant }) => !ready(keyOf(name, index, variant)));
+  if (!missing.length) return;
+  console.log(`[wheel] Drawing ${missing.length} of ${all.length} wheel spins in the background...`);
+  for (const { name, index, variant } of missing) {
+    try {
+      await draw(name, index, variant);
+    } catch (err) {
+      console.error(`[wheel] Couldn't draw ${keyOf(name, index, variant)}:`, err);
+    }
+  }
+  console.log('[wheel] Every wheel spin is ready.');
 }
 
 // On the worker thread: draw the GIF asked for and hand it back.

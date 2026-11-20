@@ -7,7 +7,7 @@ import { green, red, gained, lost } from '../colors.js';
 import { drawCharm, kickedIn, BET_CHARM_CAP } from '../charms.js';
 import { WHEELS } from '../wheel.js';
 import { spinGif } from '../wheel-gif.js';
-import { show } from './wheel.js';
+import { show, GENERATING } from './wheel.js';
 
 const MIN = 10_000; // $100; there's no maximum
 const TIME = 10_000;
@@ -176,7 +176,7 @@ async function spin({ wager, settle, wait, user, server, db, replyImageOnce, rep
   const { times, emoji } = WHEELS.bet[index];
   const back = Math.round(wager * times);
   const result = back > wager ? 'win' : back === wager ? 'tie' : 'lose';
-  await show(await spinGif('bet', index), replyImageOnce);
+  await show(await spinGif('bet', index, () => reply(GENERATING)), replyImageOnce);
   const charmLine = settle(back, result);
   wait(GAMES.wheel.cooldown[result]);
   const outcome = {

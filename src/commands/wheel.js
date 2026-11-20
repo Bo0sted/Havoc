@@ -7,7 +7,7 @@ import { placeOf } from '../storage.js';
 import { hospitalize, takeable, billLine } from '../hospital.js';
 import { surge, energyOf } from '../energy.js';
 import { charmsOf, givesCharm, charmName, TYPES, SEVERITIES } from '../charms.js';
-import { gained, lost } from '../colors.js';
+import { gained, lost, green, red } from '../colors.js';
 import { formatWait } from '../duration.js';
 
 // Two free spins every 24 hours (counted from the first one), then paid
@@ -23,6 +23,8 @@ const stamp = (ms) => Math.ceil(ms / 1000);
 // items, the rest forgiven), so keeping your cash low doesn't dodge it.
 const DEBT = { title: 'You owe', by: 'the debt collector' };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Said only when the spin's GIF isn't drawn yet (it takes a few seconds).
+export const GENERATING = '🎡 Generating... please wait a few seconds.';
 
 // Someone's wheel day: { since (null before the first free spin), free, paid }.
 function dayOf(db, server, userId, now) {
@@ -70,7 +72,8 @@ async function play({ paid, prefix, user, server, db, track, reply, replyImageOn
   const name = paid ? 'paid' : 'free';
   // The GIF first: if drawing it fails, nothing has been spent.
   let index = randomInt(WHEELS[name].length);
-  let gif = await spinGif(name, index);
+  const waiting = () => reply(GENERATING);
+  let gif = await spinGif(name, index, waiting);
   if (paid) {
     const balance = db.cents(server.key, user.id);
     if (!db.buyWheelSpin(server.key, user.id, price, day.since, day.free, day.paid + 1)) {
@@ -93,7 +96,7 @@ async function play({ paid, prefix, user, server, db, track, reply, replyImageOn
     if (!result.again) return reply(`${result.text}${footer}`);
     await reply(`${result.text} Here it goes...`);
     index = randomInt(WHEELS[name].length);
-    gif = await spinGif(name, index);
+    gif = await spinGif(name, index, waiting);
   }
 }
 
@@ -216,29 +219,51 @@ function steal(id, { server, user, db, track }) {
   return `they took your ${item.emoji} **${item.name}** (worth ${lost(item.price)})`;
 }
 
-// ?wheel odds: every slice of both wheels, with its chance.
+// ?wheel odds: every slice of both wheels with its chance, grouped by kind,
+// good outcomes in green and bad ones in red (gambles stay plain). No emojis
+// on the lines: owner's call, it was too much.
+const GROUPS = [
+  ['Money', ['cash', 'lose', 'irs', 'flip']],
+  ['Charms', ['charm']],
+  ['Items & perks', ['items', 'surge', 'again', 'wild']],
+  ['Bad luck', ['snake', 'hospital', 'pickpocket', 'robbed', 'jail']],
+];
 function odds() {
   const describe = (s) => ({
-    cash: () => `${s.emoji} ${formatMoney(s.cents)}`,
-    lose: () => `${s.emoji} Lose ${formatMoney(s.cents)} (cash first, then items)`,
-    flip: () => `${s.emoji} Coin flip: win or lose ${formatMoney(s.cents)}`,
-    irs: () => `${s.emoji} IRS audit: ${Math.round(s.rate * 100)}% of your cash (up to ${formatMoney(s.max)})`,
-    snake: () => `${s.emoji} Snake bite: a hospital bill, ${s.scale * 100}% of a hunting one`,
-    hospital: () => `${s.emoji} Hospital: a hunting-sized hospital bill`,
-    pickpocket: () => `${s.emoji} Pickpocket: lose a random Backpack item (never a legendary)`,
-    robbed: () => `${s.emoji} Robbed: lose your best Backpack item (never a legendary)`,
-    items: () => `${s.emoji} ${s.count > 1 ? `${s.count} ${s.tier} items` : `${/^[aeiou]/.test(s.tier) ? 'An' : 'A'} ${s.tier} item`}`,
-    surge: () => `${s.emoji} Energy Surge: double energy max for 12 hours`,
-    jail: () => `${s.emoji} Jail for ${formatWait(s.ms)}`,
-    charm: () => `${s.emoji} ${SEVERITIES[s.type][s.severity][0]} ${TYPES[s.type].label.toLowerCase()}`,
-    wild: () => `${s.emoji} Wild card: ${s.options.map((o) => o.name).join(', ')}`,
-    again: () => `${s.emoji} Spin again`,
+    cash: () => [green, formatMoney(s.cents)],
+    lose: () => [red, `Lose ${formatMoney(s.cents)} (cash first, then items)`],
+    irs: () => [red, `IRS audit: ${Math.round(s.rate * 100)}% of your cash, up to ${formatMoney(s.max)}`],
+    flip: () => [String, `Coin flip: win or lose ${formatMoney(s.cents)}`],
+    charm: () => [s.type === 'lucky' ? green : red, `${SEVERITIES[s.type][s.severity][0]} ${TYPES[s.type].label.toLowerCase()}`],
+    items: () => [green, s.count > 1 ? `${s.count} ${s.tier} items` : `${/^[aeiou]/.test(s.tier) ? 'An' : 'A'} ${s.tier} item`],
+    surge: () => [green, 'Energy Surge: double energy max for 12 hours'],
+    again: () => [green, 'Spin again'],
+    wild: () => [String, `Wild card: ${s.options.map((o) => o.name).join(', ')}`],
+    snake: () => [red, `Snake bite: a hospital bill, ${s.scale * 100}% of a hunting one`],
+    hospital: () => [red, 'Hospital: a hunting-sized hospital bill'],
+    pickpocket: () => [red, 'Thief: lose a random Backpack item (never a legendary)'],
+    robbed: () => [red, 'Robbed: lose your best Backpack item (never a legendary)'],
+    jail: () => [red, `Jail for ${s.ms / 60_000} minutes`],
   })[s.kind]();
+  // Good first, then gambles, then bad, within each group.
+  const order = (paint) => (paint === green ? 0 : paint === red ? 2 : 1);
   const section = (title, slices) => {
-    const counts = new Map();
-    for (const s of slices) counts.set(describe(s), (counts.get(describe(s)) ?? 0) + 1);
-    const lines = [...counts].map(([text, n]) => `${text} · ${(n / slices.length) * 100}%`);
-    return [title, ...lines].join('\n');
+    const lines = [title];
+    for (const [group, kinds] of GROUPS) {
+      const counts = new Map();
+      // Biggest amounts first.
+      for (const s of slices.filter((x) => kinds.includes(x.kind)).sort((a, b) => (b.cents ?? 0) - (a.cents ?? 0))) {
+        const [paint, text] = describe(s);
+        const seen = counts.get(text) ?? { paint, n: 0 };
+        seen.n += 1;
+        counts.set(text, seen);
+      }
+      if (!counts.size) continue;
+      const rows = [...counts].sort((a, b) => order(a[1].paint) - order(b[1].paint))
+        .map(([text, { paint, n }]) => `${paint(text)} · ${(n / slices.length) * 100}%`);
+      lines.push(`**${group}**`, ...rows);
+    }
+    return lines.join('\n');
   };
   return [
     section('🎡 **Free wheel** (2 free spins every 24 hours)', WHEELS.free),
