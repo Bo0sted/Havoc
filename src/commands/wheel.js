@@ -87,7 +87,8 @@ async function play({ paid, prefix, user, server, db, track, reply, replyImageOn
   const after = dayOf(db, server.key, user.id, Date.now());
   const footer = paid
     ? `\nYour next paid spin costs ${formatMoney(priceOf(after.paid))} (back to free spins <t:${stamp(after.since + DAY)}:R>).`
-    : after.free < FREE ? '\nYou have 1 free spin left today.' : `\nThat was your last free spin: they come back <t:${stamp(after.since + DAY)}:R>.`;
+    : after.free < FREE ? '\nYou have 1 free spin left today.'
+      : `\nThat was your last free spin: they come back <t:${stamp(after.since + DAY)}:R>. Can't wait? The paid wheel has bigger prizes (and bigger risks): \`${prefix}wheel paid\` for ${formatMoney(priceOf(after.paid))}.`;
 
   // A spin, its result, and again while it keeps landing on "spin again".
   for (;;) {
