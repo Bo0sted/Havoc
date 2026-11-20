@@ -139,10 +139,6 @@ export class HavenClient extends EventEmitter {
     });
 
     this.socket.on('message-edited', (e) => this.emit('edited', e?.messageId));
-    // Who has reacted with what on a message: the whole list, every time it changes.
-    this.socket.on('reactions-updated', (e) => {
-      if (e?.messageId && Array.isArray(e.reactions)) this.emit('reactions', e);
-    });
     this.socket.on('status-updated', (s) => this.emit('status', s));
 
     // Replies inside a forum topic, or in a thread on an ordinary message.
@@ -229,9 +225,33 @@ export class HavenClient extends EventEmitter {
     });
   }
 
-  // Deletes one of Havoc's messages (Haven checks it's ours).
+  // One message by id, in a channel or inside a thread/topic of it, as
+  // Haven's history sends it ({ id, user_id, content, ... }), or null when it
+  // isn't there (or Havoc can't see it).
+  messageById(channelCode, messageId) {
+    if (!this.socket?.connected) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const done = (message) => { clearTimeout(timer); this.socket.off('message-history', onHistory); resolve(message); };
+      const onHistory = (h) => {
+        if (h?.channelCode === channelCode && h.around === messageId) done(h.messages?.find((m) => m.id === messageId) ?? null);
+      };
+      const timer = setTimeout(() => done(null), 3000);
+      this.socket.on('message-history', onHistory);
+      this.socket.emit('get-messages', { code: channelCode, around: messageId, limit: 1 });
+    });
+  }
+
+  // Deletes a message. Resolves true once Haven confirms it, false if it
+  // doesn't (Haven only lets an ordinary account delete its own).
   deleteMessage(channelCode, messageId) {
-    this.socket?.emit('delete-message', { channelCode, messageId });
+    if (!this.socket?.connected) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const done = (ok) => { clearTimeout(timer); this.socket.off('message-deleted', onDeleted); resolve(ok); };
+      const onDeleted = (e) => { if (e?.messageId === messageId) done(true); };
+      const timer = setTimeout(() => done(false), 3000);
+      this.socket.on('message-deleted', onDeleted);
+      this.socket.emit('delete-message', { channelCode, messageId });
+    });
   }
 
   // avatar: undefined = not known yet, null = has none.
