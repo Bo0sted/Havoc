@@ -16,7 +16,7 @@ export default {
   cooldown: 5_000,
   economy: true,
   jailFree: true, // looking at your stats still works in ?wheel jail
-  async run({ args, user, server, db, findMember, reply, notHere }) {
+  async run({ prefix, args, user, server, db, findMember, reply, notHere }) {
     const extra = args[0]?.toLowerCase() === 'extra';
     if (extra) args = args.slice(1);
     let who = user;
@@ -58,9 +58,12 @@ export default {
     const pocket = db.pocket(server.key, who.id);
     assets.push(`🍀 Pocket (${pocket.length}): ${pocketContents(pocket)}`);
 
-    return reply(`${header}${overview.join('\n')}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}`);
+    return reply(`${header}${overview.join('\n')}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}\n\n${tips(prefix)}`);
   },
 };
+
+// The newer commands, at the bottom, so people find them.
+const tips = (p) => `💡 \`${p}value <item>\` an item's rarity and price · \`${p}charm list\` what charms do · \`${p}wheel\` free spins every day · \`${p}stats extra\` what you earned where · \`${p}give off\` stop gifts to you`;
 
 // "⚡ Energy: 9/60 (Fully recovered at 3:42 PM)", as a Haven timestamp so
 // everyone reads it in their own time zone; just "60/60" when full. During

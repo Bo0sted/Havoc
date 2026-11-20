@@ -24,6 +24,11 @@ export function createCooldowns(db) {
       lastUse.set(key, Date.now());
       return 0;
     },
+    // Milliseconds left to wait, without using the command (0 when ready).
+    remaining(server, cmd, userId) {
+      const length = lengthOf(server, cmd);
+      return length ? Math.max(0, (lastUse.get(`${server}\n${cmd.name}\n${userId}`) ?? 0) + length - Date.now()) : 0;
+    },
     // Milliseconds until the command's API allows another request, or 0
     // (and the use is recorded). Applies to everyone, admins included.
     takeGlobal(cmd) {

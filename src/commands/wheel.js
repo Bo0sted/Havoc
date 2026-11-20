@@ -37,24 +37,58 @@ export default {
   name: 'wheel',
   aliases: ['spin'],
   category: 'economy',
-  usage: ['', 'paid', 'odds'],
-  description: 'spin the wheel: 2 free spins every 24 hours, then paid spins on a riskier wheel ($5,000, doubling each time); `odds` shows every slice',
+  usage: ['', 'free', 'paid'],
+  description: 'the wheels: alone, what each one is and whether you can spin it; `free` and `paid` spin',
   cooldown: 5_000,
   economy: true,
-  async run({ cmd, prefix, args, user, server, db, cooldowns, track, reply, replyImageOnce, notHere }) {
+  async run({ cmd, prefix, args, isAdmin, user, server, db, cooldowns, commands, track, reply, replyImageOnce, notHere }) {
     const sub = args[0]?.toLowerCase();
-    if (sub === 'odds') return reply(odds());
-    if (args.length && !['paid', 'buy'].includes(sub)) return reply(`Usage: \`${prefix}wheel\`, \`${prefix}wheel paid\` or \`${prefix}wheel odds\``);
+    // Every slice and its chance: admins only (owner's call), and never
+    // mentioned anywhere players see. Others are ignored, like any admin command.
+    if (sub === 'odds') return isAdmin ? reply(odds()) : undefined;
+    const paid = ['paid', 'buy'].includes(sub);
+    if (!paid && sub !== 'free') {
+      if (!user) return notHere();
+      return reply(menu({ prefix, isAdmin, user, server, db, cooldowns, commands }));
+    }
     if (!user) return notHere();
     const release = claimGame(server.key, user.id);
     if (!release) return;
     try {
-      return await play({ paid: !!sub, cmd, prefix, user, server, db, cooldowns, track, reply, replyImageOnce });
+      return await play({ paid, cmd, prefix, user, server, db, cooldowns, track, reply, replyImageOnce });
     } finally {
       release();
     }
   },
 };
+
+// ?wheel on its own: the three wheels, how to spin each and whether you can
+// right now, then what each one is (owner's wording).
+function menu({ prefix, isAdmin, user, server, db, cooldowns, commands }) {
+  const now = Date.now();
+  const day = dayOf(db, server.key, user.id, now);
+  const left = FREE - day.free;
+  const free = left > 0
+    ? `You've got ${left} free spin${left === 1 ? '' : 's'} ${left === 1 ? 'left' : 'waiting'}`
+    : `All used up, back <t:${stamp(day.since + DAY)}:R>`;
+  const paid = left > 0 ? 'Use your free spins first'
+    : day.paid ? `You've spun ${day.paid} today, the next one is ${formatMoney(priceOf(day.paid))}`
+      : `Your first spin today is ${formatMoney(priceOf(0))}`;
+  const betCmd = commands.find((c) => c.name === 'bet');
+  const wait = isAdmin ? 0 : cooldowns.remaining(server.key, betCmd, user.id);
+  const seconds = Math.ceil(wait / 1000);
+  const bet = !wait ? 'Ready when you are' : seconds < 60 ? `Ready in ${seconds} second${seconds === 1 ? '' : 's'}` : `Ready in ${formatWait(wait)}`;
+  return [
+    '🎡 **Wheels**',
+    `\`${prefix}wheel free\` · ${free}`,
+    `\`${prefix}wheel paid\` · ${paid}`,
+    `\`${prefix}bet wheel <amount>\` · ${bet}`,
+    '',
+    "**Free wheel:** Two free spins every day, on the house. You could win cash, a rare item, a burst of energy or a lucky charm... or get bitten by a snake. Your spins come back 24 hours after you use the first one.",
+    '**Paid wheel:** Out of free spins and feeling lucky? This wheel is riskier, but the prizes are way bigger, like a $40,000 jackpot or a legendary item. Your first spin costs $5,000, and each one after that costs double, until your free spins come back.',
+    '**Bet wheel:** Put some money on the line and let the wheel decide. You could lose it all or win up to 8 times your bet.',
+  ].join('\n');
+}
 
 async function play({ paid, cmd, prefix, user, server, db, cooldowns, track, reply, replyImageOnce }) {
   const now = Date.now();
@@ -63,10 +97,10 @@ async function play({ paid, cmd, prefix, user, server, db, cooldowns, track, rep
   const back = day.since ? `<t:${stamp(day.since + DAY)}:R>` : null;
   if (paid && day.free < FREE) {
     const left = FREE - day.free;
-    return reply(`You still have ${left} free spin${left === 1 ? '' : 's'}: use \`${prefix}wheel\`.`);
+    return reply(`You still have ${left} free spin${left === 1 ? '' : 's'}: use \`${prefix}wheel free\`.`);
   }
   if (!paid && day.free >= FREE) {
-    return reply(`🎡 You've used both free spins. They come back ${back}. A paid spin costs **${formatMoney(price)}**: \`${prefix}wheel paid\` (riskier wheel, bigger prizes; \`${prefix}wheel odds\`).`);
+    return reply(`🎡 You've used both free spins. They come back ${back}. A paid spin costs **${formatMoney(price)}**: \`${prefix}wheel paid\` (riskier wheel, bigger prizes).`);
   }
 
   const name = paid ? 'paid' : 'free';
