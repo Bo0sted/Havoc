@@ -4,6 +4,10 @@ import { claimGame } from '../games.js';
 import { findTarget } from '../members.js';
 import { matchAnswer, optionsLine } from '../answers.js';
 import { green, red, gained, lost } from '../colors.js';
+import { drawCharm, kickedIn, BET_CHARM_CAP } from '../charms.js';
+import { WHEELS } from '../wheel.js';
+import { spinGif } from '../wheel-gif.js';
+import { show } from './wheel.js';
 
 const MIN = 10_000; // $100; there's no maximum
 const TIME = 10_000;
@@ -53,8 +57,16 @@ const GAMES = {
     pays: 6,
     cooldown: { win: 30_000, lose: 30_000 },
   },
+  // No answer: the wheel spins (?bet wheel) and the wager is multiplied by
+  // where it lands. Fair: the multipliers average exactly 1×.
+  wheel: {
+    chance: WHEELS.bet.filter((s) => s.times > 1).length / WHEELS.bet.length,
+    odds: '1 in 4 to win · pays up to 8× (half the slices are 0×)',
+    spins: true,
+    cooldown: { win: 15_000, lose: 15_000, tie: 15_000 },
+  },
 };
-const ALIASES = { coin: 'coin', flip: 'coin', coinflip: 'coin', rps: 'rps', dice: 'dice', roll: 'dice' };
+const ALIASES = { coin: 'coin', flip: 'coin', coinflip: 'coin', rps: 'rps', dice: 'dice', roll: 'dice', wheel: 'wheel', spin: 'wheel' };
 // ?bet on its own (or a mistake) and ?bet record each have a short cooldown
 // of their own, so looking things up never holds up a bet (or the other way).
 const LOOKUP = (name) => ({ name, cooldown: 5_000, cooldownText: (wait) => `One sec! Try again in ${wait}.` });
@@ -72,13 +84,13 @@ function parseAmount(text, balance) {
 export default {
   name: 'bet',
   category: 'economy',
-  usage: ['', '<coin|rps|dice> <amount|all>', 'record [@user]'],
+  usage: ['', '<coin|rps|dice|wheel> <amount|all>', 'record [@user]'],
   description: `bet $100 or more on a fair game; \`bet\` alone lists the games and their odds, \`bet record\` shows your stats`,
   cooldown: 10_000,
   cooldownText: (wait) => `Catch your breath! Your next bet is ready in ${wait}.`,
   economy: true,
   cooldownFor: (args) => (args[0]?.toLowerCase() === 'record' ? RECORD : ALIASES[args[0]?.toLowerCase()] && args.length === 2 ? null : INFO),
-  async run({ cmd, prefix, args, user, server, db, cooldowns, track, findMember, awaitAnswer, replyEditable, reply, notHere }) {
+  async run({ cmd, prefix, args, user, server, db, cooldowns, track, findMember, awaitAnswer, replyEditable, replyImageOnce, reply, notHere }) {
     if (args[0]?.toLowerCase() === 'record') return showRecord({ args: args.slice(1), user, server, db, findMember, reply, notHere });
     const name = ALIASES[args[0]?.toLowerCase()];
     if (!name || args.length !== 2) {
@@ -90,14 +102,14 @@ export default {
     const release = claimGame(server.key, user.id);
     if (!release) return;
     try {
-      return await play({ game, name, cmd, prefix, args, user, server, db, cooldowns, track, awaitAnswer, replyEditable, reply });
+      return await play({ game, name, cmd, prefix, args, user, server, db, cooldowns, track, awaitAnswer, replyEditable, replyImageOnce, reply });
     } finally {
       release();
     }
   },
 };
 
-async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns, track, awaitAnswer, replyEditable, reply }) {
+async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns, track, awaitAnswer, replyEditable, replyImageOnce, reply }) {
   const balance = db.cents(server.key, user.id);
   const wager = parseAmount(args[1], balance);
   if (wager === null) return reply(`Usage: \`${prefix}bet ${name} <amount|all>\``);
@@ -106,11 +118,28 @@ async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns
   // spent twice, and a restart mid-game hands it back.
   if (!db.holdBet(server.key, user.id, wager)) return reply(`You only have ${formatMoney(balance)}.`);
 
+  // A bet charm is picked now and used up when the bet is settled.
+  const drawn = drawCharm(db, server.key, user.id, { use: 'bet', wager, chance: game.chance });
   let settled = false;
-  const settle = (payout, result) => { db.settleBet(server.key, user.id, payout, result && { game: name, result, wager }); settled = true; };
+  // `back` is what the game itself pays back; a charm may change it (the
+  // difference counts under 'charms', the game's own result under 'betting').
+  const settle = (back, result) => {
+    const charm = charmed(drawn?.charm, wager, back);
+    db.settleBet(server.key, user.id, charm.back, result && { game: name, result, wager });
+    settled = true;
+    if (!result) return '';
+    drawn?.use();
+    track.earned('betting', back - wager);
+    track.lost('betting', wager - back);
+    track.earned('charms', charm.back - back);
+    track.lost('charms', back - charm.back);
+    track.lost('charms', charm.extra && db.takeUpTo(server.key, user.id, charm.extra));
+    return charm.line;
+  };
   // An admin's ?cooldown override replaces the per-game cooldowns.
   const wait = (ms) => cooldowns.setRemaining(server.key, cmd, user.id, db.overrides(server.key).get(cmd.name) ?? ms);
   try {
+    if (game.spins) return await spin({ wager, settle, wait, user, server, db, replyImageOnce, reply });
     const mine = game.draw();
     // Only the game and its choices while it's on: odds live in ?bet.
     const edit = await replyEditable(`${game.ask} (waiting for your answer)\n${optionsLine(game.options)}`);
@@ -118,29 +147,79 @@ async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns
 
     if (answer === null) {
       const penalty = Math.max(1, Math.round(wager * TIMEOUT_PENALTY));
-      settle(wager - penalty, 'timeout');
-      track.lost('betting', penalty);
+      const charmLine = settle(wager - penalty, 'timeout');
       wait(TIMEOUT_COOLDOWN);
-      return edit(`⌛ Timed out, bet cancelled. 5% penalty: ${red(`-${formatMoney(penalty)}`)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+      return edit(`⌛ Timed out, bet cancelled. 5% penalty: ${red(`-${formatMoney(penalty)}`)}.${charmLine} You now have ${formatMoney(db.cents(server.key, user.id))}.`);
     }
 
     const [result, line] = game.judge(matchAnswer(answer, game.options, game.aliases), mine);
     const back = result === 'win' ? wager * game.pays : result === 'tie' ? wager : 0;
-    settle(back, result);
-    track.earned('betting', back - wager);
-    track.lost('betting', wager - back);
+    const charmLine = settle(back, result);
     wait(game.cooldown[result]);
     const outcome = {
       win: `Congrats! ${green(`+${formatMoney(back - wager)}`)}.`,
       tie: `It's a tie, your ${formatMoney(wager)} is back.`,
       lose: `Sorry, you lost ${lost(wager)}.`,
     }[result];
-    return edit(`${line} ${outcome} You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+    return edit(`${line} ${outcome}${charmLine} You now have ${formatMoney(db.cents(server.key, user.id))}.`);
   } catch (err) {
     // Something broke before the bet was settled: give the wager back.
     if (!settled) settle(wager);
     throw err;
   }
+}
+
+// ?bet wheel: the wager is already held. The wheel spins (only the GIF
+// while it does), then the result says what it landed on.
+async function spin({ wager, settle, wait, user, server, db, replyImageOnce, reply }) {
+  const index = randomInt(WHEELS.bet.length);
+  const { times, emoji } = WHEELS.bet[index];
+  const back = Math.round(wager * times);
+  const result = back > wager ? 'win' : back === wager ? 'tie' : 'lose';
+  await show(await spinGif('bet', index), replyImageOnce);
+  const charmLine = settle(back, result);
+  wait(GAMES.wheel.cooldown[result]);
+  const outcome = {
+    win: `Congrats! ${green(`+${formatMoney(back - wager)}`)}.`,
+    tie: `Your ${formatMoney(wager)} is back.`,
+    lose: back ? `You get ${formatMoney(back)} back, so you lost ${lost(wager - back)}.` : `Sorry, you lost ${lost(wager)}.`,
+  }[result];
+  return reply(`${emoji ?? '🎡'} The wheel landed on **${times}×**! ${outcome}${charmLine} You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+}
+
+// What a bet charm does once the game says what it pays back (`back` of
+// `wager`): { back, extra, line }. `extra` is more to take from their cash
+// (never into debt). A charm is used up even when it changes nothing.
+function charmed(charm, wager, back) {
+  if (!charm) return { back, extra: 0, line: '' };
+  const said = (text) => ` ${kickedIn(charm)} ${text}`;
+  const won = back > wager;
+  const loss = wager - back;
+  switch (charm.id) {
+    case 'loaded_dice': {
+      if (!won) break;
+      const more = Math.min(back, BET_CHARM_CAP);
+      return { back: back + more, extra: 0, line: said(`Payout doubled: ${gained(more)} more.`) };
+    }
+    case 'guardian_angel': {
+      if (loss <= 0) break;
+      const refund = Math.min(loss, BET_CHARM_CAP);
+      return { back: back + refund, extra: 0, line: said(`${gained(refund)} refunded.`) };
+    }
+    case 'spilled_salt':
+      if (!won) break;
+      return { back: wager, extra: 0, line: said(`You only get your ${formatMoney(wager)} back (${lost(back - wager)} gone).`) };
+    case 'indoor_umbrella': {
+      if (!won) break;
+      const cut = Math.ceil((back - wager) / 2);
+      return { back: back - cut, extra: 0, line: said(`Half the winnings are gone (${lost(cut)}).`) };
+    }
+    case 'gamblers_curse':
+      if (loss <= 0) break;
+      return { back, extra: loss, line: said(`You lose that much again (up to ${lost(loss)}).`) };
+    default:
+  }
+  return { back, extra: 0, line: said("It didn't change anything this time.") };
 }
 
 const pct = (n, of) => (!n || !of ? '0%' : n / of < 0.01 ? '<1%' : `${Math.round((n / of) * 100)}%`);

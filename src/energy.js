@@ -19,18 +19,30 @@ export const BOOSTS = [
 
 export const settingsFor = (db, server) => db.energySettings(server) ?? DEFAULTS;
 
-// Someone's bar right now: points, max, every, `since` (where the clock
-// toward the next point started), `next` (ms until it, 0 when full) and
-// `boostIn` (ms until another recovery item is allowed, 0 when it is).
+// ?wheel's Energy Surge: the bar's max doubles for this long.
+export const SURGE = 12 * 3_600_000;
+
+// Someone's bar right now: points, max (doubled during a surge), base (the
+// max without one), every, `since` (where the clock toward the next point
+// started), `next` (ms until it, 0 when full), `boostIn` (ms until another
+// recovery item is allowed, 0 when it is) and `surgeUntil` (0 when none).
 export function energyOf(db, server, userId, now = Date.now()) {
-  const { max, every } = settingsFor(db, server);
+  const { max: base, every } = settingsFor(db, server);
   const row = db.energy(server, userId);
-  if (!row) return { points: max, max, every, since: now, next: 0, boostIn: 0 };
+  if (!row) return { points: base, max: base, base, every, since: now, next: 0, boostIn: 0, surgeUntil: 0 };
+  const surgeUntil = row.surge_until > now ? row.surge_until : 0;
+  const max = surgeUntil ? base * 2 : base;
   const gained = Math.floor((now - row.since) / every);
   const points = Math.min(max, row.points + gained);
   // While not full, the clock keeps its progress toward the next point.
   const since = points >= max ? now : row.since + gained * every;
-  return { points, max, every, since, next: points >= max ? 0 : since + every - now, boostIn: Math.max(0, row.boosted + BOOST_COOLDOWN - now) };
+  return { points, max, base, every, since, next: points >= max ? 0 : since + every - now, boostIn: Math.max(0, row.boosted + BOOST_COOLDOWN - now), surgeUntil };
+}
+
+// Starts (or restarts) an Energy Surge: the doubled bar, full, for SURGE.
+export function surge(db, server, userId, now = Date.now()) {
+  const bar = energyOf(db, server, userId, now);
+  db.surge(server, userId, bar.base * 2, now, now + SURGE);
 }
 
 // Ms until the bar has `cost` points (0 if it already has).
@@ -45,8 +57,10 @@ export function spend(db, server, userId, cost) {
 }
 
 // What a recovery item would do to this bar: the points after it, and how
-// many would go to waste over the max.
+// many would go to waste over the max. A "full bar" item gives a normal bar's
+// worth, so it isn't worth double during an Energy Surge.
 export function boosted(bar, boost) {
-  const points = Math.min(bar.max, bar.points + boost.energy);
-  return { points, wasted: boost.energy === Infinity ? 0 : bar.points + boost.energy - points };
+  const amount = boost.energy === Infinity ? bar.base : boost.energy;
+  const points = Math.min(bar.max, bar.points + amount);
+  return { points, wasted: boost.energy === Infinity ? 0 : bar.points + amount - points };
 }

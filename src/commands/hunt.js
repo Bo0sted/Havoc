@@ -1,12 +1,11 @@
 import { toolById, ammoById } from '../tools.js';
-import { itemById, formatMoney } from '../items.js';
 import { energyOf, spend, waitFor } from '../energy.js';
 import { formatWait } from '../duration.js';
 import { matchAnswer } from '../answers.js';
-import { pick, rollTier, backpackFull, foundLine } from '../gather.js';
-import { hospitalize } from '../hospital.js';
-import { label } from '../storage.js';
-import { gained, lost } from '../colors.js';
+import { pick, backpackFull, foundLine, charmedCatch, charmedCost } from '../gather.js';
+import { drawCharm, kickedIn } from '../charms.js';
+import { hospitalize, billLine } from '../hospital.js';
+import { placeOf } from '../storage.js';
 
 // High risk, high reward: a Hunting License, a gun and 1 round per hunt.
 // Small game (any gun, 1 energy) pays a bit more than fishing with little
@@ -104,31 +103,26 @@ export default {
     if (bar.points < mode.energy) {
       return reply(`😮‍💨 You're exhausted. Hunting ${mode.game} takes ${mode.energy} energy and you have ${bar.points}. Enough in ${formatWait(waitFor(bar, mode.energy))}, or recover faster in \`${prefix}shop\`.`);
     }
-    if (!spend(db, server.key, user.id, mode.energy)) return reply("😮‍💨 You're exhausted.");
+    // One charm may fire; it's only used up once the hunt really happens.
+    const { used, space } = placeOf(db, server.key, user.id, 'backpack');
+    const drawn = drawCharm(db, server.key, user.id, { use: mode.from, room: space - used });
+    const charm = drawn?.charm;
+    if (!spend(db, server.key, user.id, charmedCost(charm, mode.energy, bar.points))) return reply("😮‍💨 You're exhausted.");
+    drawn?.use();
     db.useAmmo(server.key, user.id, ammo.id);
+    const charmed = charm ? `${kickedIn(charm)}\n` : '';
 
-    const found = rollTier(mode.tiers(gun), mode.from);
-    if (!found) return reply(`🔫 ${pick(mode.misses)}`);
-    if (found.tier === 'hospital') {
+    const found = charmedCatch(charm, mode.tiers(gun), mode.from);
+    if (!found.length) return reply(`${charmed}🔫 ${pick(mode.misses)}`);
+    if (found[0].tier === 'hospital') {
       const bill = hospitalize(db, server.key, user.id);
       track.lost('hunting', bill.bill - bill.forgiven);
-      return reply(`🏥 ${pick(mode.hurt)} ${billLine(bill)}`);
+      return reply(`${charmed}🏥 ${pick(mode.hurt)} ${billLine(bill)}`);
     }
-    db.addItem(server.key, user.id, found.id);
-    track.earned('hunting', found.price);
-    return reply(foundLine('🔫', user.name, 'bagged', found));
+    for (const item of found) {
+      db.addItem(server.key, user.id, item.id);
+      track.earned('hunting', item.price);
+    }
+    return reply(charmed + found.map((item) => foundLine('🔫', user.name, 'bagged', item)).join('\n'));
   },
 };
-
-// "Hospital bill: **$X**. You paid it in cash." and so on.
-function billLine({ bill, cash, taken, change, forgiven }) {
-  if (!bill || forgiven === bill) return "The hospital let you off: you've got nothing to pay with.";
-  const head = `Hospital bill: **${lost(bill)}**.`;
-  const rest = forgiven ? ` You couldn't cover the last ${formatMoney(forgiven)}, so the hospital let it go.` : '';
-  if (!taken.length) return `${head} You paid ${forgiven ? lost(cash) : 'it'} in cash.${rest}`;
-  const items = taken.map((t) => label(itemById.get(t.item), t.qty)).join(', ');
-  const back = change ? ` (${gained(change)} back in change)` : '';
-  return cash
-    ? `${head} You paid ${lost(cash)} in cash and the hospital took ${items}${forgiven ? '' : ' for the rest'}${back}.${rest}`
-    : `${head} You had no cash, so the hospital took ${items}${back}.${rest}`;
-}

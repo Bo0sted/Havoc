@@ -6,7 +6,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node --env-file-if-exists=.env src/index.js",
-    "preview-blowup": "node --env-file-if-exists=.env scripts/preview-blowup.js"
+    "preview-blowup": "node --env-file-if-exists=.env scripts/preview-blowup.js",
+    "wheel-art": "node scripts/wheel-art.js"
   },
   "engines": { "node": ">=22" },
   "dependencies": {

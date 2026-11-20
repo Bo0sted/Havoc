@@ -3,6 +3,7 @@
 // stacks it means. Retired items take no space and can't be chosen.
 import { ITEMS, itemById, valueOf } from './items.js';
 import { toolById } from './tools.js';
+import { rarity } from './colors.js';
 
 export const BACKPACK_SPACE = 100;
 export const TIERS = new Set(ITEMS.map((i) => i.tier));
@@ -31,11 +32,12 @@ export function placeOf(db, server, userId, place) {
   return { rows, used: used(rows), space };
 }
 
-// "3 🐟 Salmon, 1 🦌 Bull Elk" in catalogue order, or "empty".
+// "3 🐟 Salmon, 1 🦌 Bull Elk" in catalogue order, or "empty"; epics and
+// legendaries in their colours.
 export function contents(rows) {
   if (!rows.length) return 'empty';
   return [...rows].sort((a, b) => order.get(a.item) - order.get(b.item))
-    .map((r) => label(itemById.get(r.item), r.qty)).join(', ');
+    .map((r) => { const item = itemById.get(r.item); return rarity(item.tier, label(item, r.qty)); }).join(', ');
 }
 
 export const label = (item, qty) => `${qty} ${item.emoji} ${item.name}`;
@@ -46,7 +48,7 @@ const key = (text) => text.toLowerCase().replace(/\(.*?\)/g, '').replace(/[^a-z0
 // The item a name means: an exact name first, else every name containing it
 // (retired ones only if they're held). Several matches narrow to the ones
 // actually held.
-function findItem(query, held) {
+export function findItem(query, held = new Map()) {
   const q = key(query);
   if (!q) return { matches: [] };
   const exact = ITEMS.find((i) => key(i.name) === q || key(i.id) === q);

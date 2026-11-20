@@ -20,6 +20,8 @@ export const STREAMS = {
   gifts: { label: 'Gifts', emoji: '🤝', earned: 'received', lost: 'given' },
   milestones: { label: 'Milestones', emoji: '🏅' },
   shop: { label: 'Shop', emoji: '🛒', lost: 'spent' },
+  wheel: { label: 'Wheel', emoji: '🎡' },
+  charms: { label: 'Charms', emoji: '🍀' },
 };
 
 // One command run's view of the ledger. Anything that gains or loses money

@@ -37,6 +37,7 @@ const router = createRouter({ prefix: PREFIX, commands, servers, db, cooldowns }
 // Expired guest blocks and stale cooldowns are cleared out hourly.
 setInterval(() => {
   db.purgeGuestBlocks();
+  db.purgeJail();
   cooldowns.prune();
 }, 3_600_000).unref();
 

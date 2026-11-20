@@ -1,7 +1,8 @@
 import { formatMoney } from '../items.js';
 import { findTool } from '../tools.js';
 import { TIERS, choose, describe } from '../storage.js';
-import { gained } from '../colors.js';
+import { gained, lost } from '../colors.js';
+import { drawCharm, kickedIn } from '../charms.js';
 
 export default {
   name: 'sell',
@@ -35,10 +36,21 @@ export function sellFrom(place, args, { prefix, user, server, db, track, reply }
   const kept = keptLegendaries ? ` Legendaries stay in your ${box}: sell those by name.` : '';
   if (!lots.length) return reply(`Nothing to sell.${kept}`);
 
-  const cents = lots.reduce((sum, l) => sum + l.item.price * l.qty, 0);
+  // Midas Touch doubles one of the most valuable item sold, Haunted Pawn
+  // Ticket halves it (only once the sale has an epic or legendary in it).
+  const top = lots.reduce((best, l) => (l.item.price > best.item.price ? l : best));
+  const drawn = drawCharm(db, server.key, user.id, { use: 'sell', valuable: lots.some((l) => ['epic', 'legendary'].includes(l.item.tier)) });
+  const change = { midas_touch: top.item.price, haunted_pawn_ticket: -Math.floor(top.item.price / 2) }[drawn?.charm.id] ?? 0;
+  const cents = lots.reduce((sum, l) => sum + l.item.price * l.qty, 0) + change;
   const ok = db.sell(server.key, user.id, lots.map((l) => ({ item: l.item.id, qty: l.qty })), cents, place);
   if (!ok) return reply(`Your ${box} changed while I was counting. Try again.`);
   // Catches were counted as earned when caught: selling only turns them into cash.
   track.moved();
-  return reply(`💰 Sold ${describe(lots)} for ${gained(cents)}. You now have ${formatMoney(db.cents(server.key, user.id))}.${kept}`);
+  drawn?.use();
+  track.earned('charms', change);
+  track.lost('charms', -change);
+  const charmed = !drawn ? '' : change > 0
+    ? `${kickedIn(drawn.charm)} One ${top.item.emoji} ${top.item.name} sold for double (${gained(change)} extra).\n`
+    : `${kickedIn(drawn.charm)} One ${top.item.emoji} ${top.item.name} sold for half (${lost(-change)} less).\n`;
+  return reply(`${charmed}💰 Sold ${describe(lots)} for ${gained(cents)}. You now have ${formatMoney(db.cents(server.key, user.id))}.${kept}`);
 }

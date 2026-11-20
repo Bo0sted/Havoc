@@ -11,6 +11,10 @@ const EULA_VERSION = '2.0';
 const SEND_MAX = 9;
 const SEND_WINDOW = 10_250;
 
+// How long an uploaded image is posted again before uploading it afresh
+// (in case the server cleaned old uploads out).
+const UPLOAD_REUSE = 24 * 3_600_000;
+
 // A failure whose reason is fine to show in chat.
 const refusal = (reason) => Object.assign(new Error(reason), { reason });
 
@@ -31,6 +35,8 @@ export class HavenClient extends EventEmitter {
     // which of them are forums.
     this.serverChannels = new Map();
     this.forumChannels = new Set();
+    // Images posted with sendImageOnce: key → { url, at }.
+    this.uploaded = new Map();
     // Posts waiting to go out, and when the recent ones went.
     this.outbox = [];
     this.sentAt = [];
@@ -362,9 +368,9 @@ export class HavenClient extends EventEmitter {
     });
   }
 
-  // Uploads an image through the same endpoint the web app uses, then posts
-  // it the way the app does: the /uploads/ path as the message.
-  async sendImage(channelCode, buffer, filename, mime, opts) {
+  // Uploads an image through the same endpoint the web app uses and
+  // returns its /uploads/ path.
+  async upload(buffer, filename, mime) {
     const form = new FormData();
     form.append('image', new Blob([buffer], { type: mime }), filename);
     const res = await fetch(`${this.url}/api/upload`, {
@@ -374,6 +380,24 @@ export class HavenClient extends EventEmitter {
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok || !body.url) throw new Error(`Upload failed (${res.status}): ${body.error || 'no details'}`);
-    await this.post(channelCode, { content: body.url, isImage: true }, opts);
+    return body.url;
+  }
+
+  // Posts an image the way the app does: the /uploads/ path as the message.
+  async sendImage(channelCode, buffer, filename, mime, opts) {
+    await this.post(channelCode, { content: await this.upload(buffer, filename, mime), isImage: true }, opts);
+  }
+
+  // Posts an image that's the same every time (`key` names it): uploaded
+  // here once a day at most, then the same file is posted again, so repeats
+  // cost no uploads or disk. `buffer()` makes it when it's needed.
+  async sendImageOnce(channelCode, key, buffer, filename, mime, opts) {
+    const known = this.uploaded.get(key);
+    let url = known && Date.now() - known.at < UPLOAD_REUSE ? known.url : null;
+    if (!url) {
+      url = await this.upload(await buffer(), filename, mime);
+      this.uploaded.set(key, { url, at: Date.now() });
+    }
+    await this.post(channelCode, { content: url, isImage: true }, opts);
   }
 }

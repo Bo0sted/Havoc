@@ -2,7 +2,8 @@ import { findTarget } from '../members.js';
 import { KINDS, toolById, licenseById, wear, breakable } from '../tools.js';
 import { energyOf, waitFor } from '../energy.js';
 import { placeOf, safeOf, contents, worthOf } from '../storage.js';
-import { gained, lost } from '../colors.js';
+import { gained, lost, RARITY_KEY } from '../colors.js';
+import { pocketContents } from '../charms.js';
 import { STREAMS, TRACKING_START } from '../earnings.js';
 import { nextAfter } from '../milestones.js';
 
@@ -14,6 +15,7 @@ export default {
   description: 'your money, energy, licenses, tools, Backpack and safe, or someone else\'s; `extra` shows what was earned and lost where, and the next milestone',
   cooldown: 5_000,
   economy: true,
+  jailFree: true, // looking at your stats still works in ?wheel jail
   async run({ args, user, server, db, findMember, reply, notHere }) {
     const extra = args[0]?.toLowerCase() === 'extra';
     if (extra) args = args.slice(1);
@@ -47,24 +49,28 @@ export default {
       .map(({ kind, uses, tool }) => `${KINDS[kind].emoji} ${tool.name} (${breakable(tool) ? wear(kind, uses) : `${rounds.get(tool.ammo) ?? 0} rounds left`})`);
 
     const backpack = placeOf(db, server.key, who.id, 'backpack');
-    const assets = ['**Assets**', `🎒 Backpack (${backpack.used}/${backpack.space}): ${contents(backpack.rows)}`];
+    const assets = ['**Assets**', RARITY_KEY, `🎒 Backpack (${backpack.used}/${backpack.space}): ${contents(backpack.rows)}`];
     const safe = safeOf(db, server.key, who.id);
     if (safe) {
       const box = placeOf(db, server.key, who.id, 'safe');
       assets.push(`${KINDS.safe.emoji} ${safe.name} (${box.used}/${box.space}): ${contents(box.rows)}`);
     }
+    const pocket = db.pocket(server.key, who.id);
+    assets.push(`🍀 Pocket (${pocket.length}): ${pocketContents(pocket)}`);
 
     return reply(`${header}${overview.join('\n')}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}`);
   },
 };
 
 // "⚡ Energy: 9/60 (Fully recovered at 3:42 PM)", as a Haven timestamp so
-// everyone reads it in their own time zone; just "60/60" when full.
+// everyone reads it in their own time zone; just "60/60" when full. During
+// an Energy Surge it also says when that ends.
 function energyLine(bar) {
-  if (bar.points >= bar.max) return `⚡ Energy: ${bar.points}/${bar.max}`;
+  const surge = bar.surgeUntil ? ` · Energy Surge until <t:${Math.ceil(bar.surgeUntil / 1000)}:t>` : '';
+  if (bar.points >= bar.max) return `⚡ Energy: ${bar.points}/${bar.max}${surge}`;
   const ms = waitFor(bar, bar.max);
   const at = Math.ceil((Date.now() + ms) / 1000);
-  return `⚡ Energy: ${bar.points}/${bar.max} (Fully recovered at <t:${at}:${ms < 86_400_000 ? 't' : 'f'}>)`;
+  return `⚡ Energy: ${bar.points}/${bar.max} (Fully recovered at <t:${at}:${ms < 86_400_000 ? 't' : 'f'}>)${surge}`;
 }
 
 // ?stats extra: what someone had before tracking started, then what was

@@ -2,7 +2,8 @@
 //   1. unknown commands, and admin commands from non-admins, are ignored silently
 //   2. once a server has bot channels, non-admins are ignored everywhere else
 //   3. ?remote: an admin's commands use another server's data (replies stay here)
-//   4. economy commands refuse guests once, then ignore them for 12 hours
+//   4. economy commands refuse guests once, then ignore them for 12 hours,
+//      and refuse anyone in ?wheel jail (except jailFree ones like ?stats)
 //   5. cooldowns (admins skip them), then the API's own limit (nobody skips it)
 //   6. the command runs; anything that goes wrong is logged to the console only
 //   7. an economy command that gained or lost money (through `track`) counts
@@ -50,6 +51,8 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
 
     try {
       if (cmd.economy && !isAdmin && (await refuseGuest(home, userId, channelCode, out))) return;
+      const jailed = cmd.economy && !cmd.jailFree ? db.jailedUntil(server.key, userId) - Date.now() : 0;
+      if (jailed > 0) return await out.reply(`🚔 You're in jail for another ${formatWait(jailed)}. Only \`${prefix}stats\` works until then.`);
       if (!isAdmin) {
         // A subcommand can have a cooldown of its own (e.g. ?bet record).
         const timed = cmd.cooldownFor?.(args) ?? cmd;
@@ -145,6 +148,12 @@ function output(home, { channelCode, message, threadId }, remoteName, prefix) {
       if (note && !noted) home.client.send(channelCode, note.trim(), where);
       noted = false;
       await home.client.sendImage(channelCode, buffer, filename, mime, where);
+    },
+    // An image that's the same every time (`key`): uploaded once, then reposted.
+    replyImageOnce: async (key, buffer, filename, mime) => {
+      if (note && !noted) home.client.send(channelCode, note.trim(), where);
+      noted = false;
+      await home.client.sendImageOnce(channelCode, key, buffer, filename, mime, where);
     },
     // A message that notifies `member` ({ id, name }): its own message where
     // the command was typed, not silent and not a reply (a reply would

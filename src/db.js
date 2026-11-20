@@ -86,7 +86,26 @@ const SCHEMA = `
     server TEXT NOT NULL, user_id INTEGER NOT NULL,
     PRIMARY KEY (server, user_id)
   );
+  CREATE TABLE IF NOT EXISTS pocket (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, charm TEXT NOT NULL, charges INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS pocket_owner ON pocket (server, user_id);
+  CREATE TABLE IF NOT EXISTS jail (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, until INTEGER NOT NULL,
+    PRIMARY KEY (server, user_id)
+  );
+  CREATE TABLE IF NOT EXISTS wheel_spins (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL,
+    since INTEGER NOT NULL, free_used INTEGER NOT NULL, paid INTEGER NOT NULL,
+    PRIMARY KEY (server, user_id)
+  );
 `;
+
+// Columns added to a table after it first shipped: [table, column, definition].
+const COLUMNS = [
+  ['energy', 'surge_until', 'INTEGER NOT NULL DEFAULT 0'],
+];
 
 // The Backpack is the `items` table (it was the Safety Deposit Box, so
 // everything people already had is in their Backpack); a safe is `safe_items`.
@@ -96,6 +115,11 @@ export function openDb(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
+  for (const [table, column, definition] of COLUMNS) {
+    if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column)) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
   const q = (sql) => db.prepare(sql);
 
   const s = {
@@ -139,7 +163,17 @@ export function openDb(path) {
     claimPromo: q('INSERT OR IGNORE INTO promo_claims (server, user_id, promo) VALUES (?, ?, ?)'),
     promoClaimed: q('SELECT 1 FROM promo_claims WHERE server = ? AND user_id = ? AND promo = ?'),
     addCents: q('INSERT INTO wallets (server, user_id, cents) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET cents = cents + excluded.cents'),
-    energy: q('SELECT points, since, boosted FROM energy WHERE server = ? AND user_id = ?'),
+    energy: q('SELECT points, since, boosted, surge_until FROM energy WHERE server = ? AND user_id = ?'),
+    surge: q('INSERT INTO energy (server, user_id, points, since, surge_until) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET points = excluded.points, since = excluded.since, surge_until = excluded.surge_until'),
+    pocket: q('SELECT id, charm, charges FROM pocket WHERE server = ? AND user_id = ? ORDER BY id'),
+    addCharm: q('INSERT INTO pocket (server, user_id, charm, charges) VALUES (?, ?, ?, ?)'),
+    spendCharge: q('UPDATE pocket SET charges = charges - 1 WHERE id = ?'),
+    dropSpentCharms: q('DELETE FROM pocket WHERE id = ? AND charges <= 0'),
+    jailedUntil: q('SELECT until FROM jail WHERE server = ? AND user_id = ?'),
+    jail: q('INSERT INTO jail (server, user_id, until) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET until = excluded.until'),
+    purgeJail: q('DELETE FROM jail WHERE until <= ?'),
+    wheelSpins: q('SELECT since, free_used, paid FROM wheel_spins WHERE server = ? AND user_id = ?'),
+    setWheelSpins: q('INSERT INTO wheel_spins (server, user_id, since, free_used, paid) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET since = excluded.since, free_used = excluded.free_used, paid = excluded.paid'),
     setEnergy: q('INSERT INTO energy (server, user_id, points, since) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET points = excluded.points, since = excluded.since'),
     boost: q('INSERT INTO energy (server, user_id, points, since, boosted) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET points = excluded.points, since = excluded.since, boosted = excluded.boosted'),
     energySettings: q('SELECT max, every FROM energy_settings WHERE server = ?'),
@@ -358,6 +392,33 @@ export function openDb(path) {
     // used, so full). The bar itself is worked out in energy.js.
     energy: (server, userId) => s.energy.get(server, userId) ?? null,
     setEnergy: (server, userId, points, since) => s.setEnergy.run(server, userId, points, since),
+    // An Energy Surge: the bar's max doubles until `until`, and it's `points` now.
+    surge: (server, userId, points, since, until) => s.surge.run(server, userId, points, since, until),
+    // Charms in someone's Pocket ([{ id, charm, charges }]); using one takes a
+    // charge, and it's gone with its last.
+    pocket: (server, userId) => s.pocket.all(server, userId),
+    addCharm: (server, userId, charm, charges) => s.addCharm.run(server, userId, charm, charges),
+    useCharm: (id) => atomic(() => {
+      s.spendCharge.run(id);
+      s.dropSpentCharms.run(id);
+    }),
+    // ?wheel jail: no economy commands until then (0 when free).
+    jailedUntil: (server, userId) => s.jailedUntil.get(server, userId)?.until ?? 0,
+    jail: (server, userId, until) => s.jail.run(server, userId, until),
+    purgeJail: (now = Date.now()) => s.purgeJail.run(now),
+    // Someone's ?wheel day ({ since, free_used, paid } or null): when their
+    // first free spin of it was, and how many free and paid spins since.
+    wheelSpins: (server, userId) => s.wheelSpins.get(server, userId) ?? null,
+    setWheelSpins: (server, userId, since, freeUsed, paid) => s.setWheelSpins.run(server, userId, since, freeUsed, paid),
+    // Pays for a paid spin and records it. False, and nothing changes, if
+    // they can't afford it.
+    buyWheelSpin: (server, userId, cost, since, freeUsed, paid) => atomic(() => {
+      if (s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
+      s.setWheelSpins.run(server, userId, since, freeUsed, paid);
+      return true;
+    }),
+    // Takes one of an item from the Backpack. False if there wasn't one.
+    takeItem: (server, userId, item) => s.backpack.take.run(1, server, userId, item, 1).changes > 0,
     // Pays for a recovery item and applies it. False, and nothing changes,
     // if they can't afford it.
     buyBoost: (server, userId, cost, points, since, at) => atomic(() => {

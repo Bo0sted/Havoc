@@ -7,8 +7,47 @@ import { KINDS, PROMOS, toolById } from './tools.js';
 import { energyOf, spend, waitFor } from './energy.js';
 import { formatWait } from './duration.js';
 import { placeOf, safeOf } from './storage.js';
+import { drawCharm, kickedIn } from './charms.js';
 
 export const pick = (list) => list[randomInt(list.length)];
+const LADDER = ['trash', 'common', 'rare', 'epic', 'legendary'];
+
+// A random item of one tier from `from` (null if it has none).
+function itemOf(from, tier) {
+  const items = ITEMS.filter((i) => i.from === from && i.tier === tier && !i.retired);
+  return items.length ? pick(items) : null;
+}
+
+// What a fish, mine or hunt brings in once a charm (or none) has had its say:
+// a list of finds (items, or { tier: 'hospital' }), empty for a miss.
+export function charmedCatch(charm, tiers, from) {
+  const real = tiers.filter((t) => t.tier !== 'nothing' && t.tier !== 'hospital');
+  switch (charm?.id) {
+    case 'rabbits_foot':
+    case 'four_leaf_clover': return [itemOf(from, 'epic')].filter(Boolean);
+    case 'pot_of_gold': return [itemOf(from, 'legendary')].filter(Boolean);
+    case 'black_cat':
+    case 'voodoo_doll': return [];
+    case 'raccoons_curse': return [itemOf(from, LADDER.find((tier) => real.some((t) => t.tier === tier)))].filter(Boolean);
+    case 'lodestone': {
+      // Two finds of different tiers, each rolled with the usual odds.
+      const first = rollTier(real, from);
+      const second = rollTier(real.filter((t) => t.tier !== first.tier), from);
+      return [first, second].filter((f) => f?.id);
+    }
+    case 'lucky_horseshoe': return [rollTier(tiers.filter((t) => t.tier !== 'hospital'), from)].filter(Boolean);
+    case 'friday_the_13th': return [{ tier: 'hospital' }];
+    default: return [rollTier(tiers, from)].filter(Boolean);
+  }
+}
+
+// The energy a fish, mine or hunt costs with this charm: none with Second
+// Wind, double (or whatever's left) with Sisyphus Stone.
+export function charmedCost(charm, cost, have) {
+  if (charm?.id === 'second_wind') return 0;
+  if (charm?.id === 'sisyphus_stone') return Math.min(cost * 2, have);
+  return cost;
+}
 
 // A tier by weight ({ tier, weight } in `tiers`), then an item in it from
 // `from`; null for 'nothing'. Other tiers ('hospital') come back as { tier }.
@@ -64,19 +103,28 @@ export function gatherCommand({ name, description, kind, from, stream, verb, act
       }
 
       // Safe for the guaranteed uses, then a chance each time; past max it
-      // always breaks. A break costs no energy: nothing was caught.
-      if (held.uses >= tool.max || (held.uses >= tool.guaranteed && randomInt(100) < tool.breakChance)) {
+      // always breaks. A break costs no energy: nothing was caught. One charm
+      // may fire (only Lucky Break while breaking, which saves the tool).
+      const breaking = held.uses >= tool.max || (held.uses >= tool.guaranteed && randomInt(100) < tool.breakChance);
+      const { used, space } = placeOf(db, server.key, user.id, 'backpack');
+      const drawn = drawCharm(db, server.key, user.id, { use: name, breaking, room: space - used });
+      const charm = drawn?.charm;
+      drawn?.use();
+      const charmed = charm ? `${kickedIn(charm)}\n` : '';
+      if ((breaking && !charm) || charm?.id === 'broken_mirror') {
         db.breakTool(server.key, user.id, kind, `broken_${tool.id}`);
-        return reply(`${emoji} ${tool.breaks} Buy a new one with \`${prefix}shop\`.`);
+        return reply(`${charmed}${emoji} ${tool.breaks} Buy a new one with \`${prefix}shop\`.`);
       }
 
-      spend(db, server.key, user.id, energy);
+      spend(db, server.key, user.id, charmedCost(charm, energy, bar.points));
       db.useTool(server.key, user.id, kind);
-      const item = rollTier(tiers, from);
-      if (!item) return reply(`${emoji} ${pick(misses)}`);
-      db.addItem(server.key, user.id, item.id);
-      track.earned(stream, item.price);
-      return reply(foundLine(emoji, user.name, verb, item));
+      const found = charmedCatch(charm, tiers, from);
+      if (!found.length) return reply(`${charmed}${emoji} ${pick(misses)}`);
+      for (const item of found) {
+        db.addItem(server.key, user.id, item.id);
+        track.earned(stream, item.price);
+      }
+      return reply(charmed + found.map((item) => foundLine(emoji, user.name, verb, item)).join('\n'));
     },
   };
 }
