@@ -77,8 +77,8 @@ function earnings(db, server, who) {
     .filter((r) => r.stream !== 'before')
     .sort((a, b) => (order.indexOf(a.stream) + 1 || Infinity) - (order.indexOf(b.stream) + 1 || Infinity))
     .map(({ stream, earned, lost: gone }) => {
-      const { label = stream, emoji, lost: lostLabel = 'lost' } = STREAMS[stream] ?? {};
-      const parts = [earned && `${gained(earned)} earned`, gone && `${lost(gone)} ${lostLabel}`].filter(Boolean);
+      const { label = stream, emoji, earned: earnedLabel = 'earned', lost: lostLabel = 'lost' } = STREAMS[stream] ?? {};
+      const parts = [earned && `${gained(earned)} ${earnedLabel}`, gone && `${lost(gone)} ${lostLabel}`].filter(Boolean);
       return `${emoji ? `${emoji} ` : ''}${label}: ${parts.join(' · ')}`;
     });
   const total = (field) => rows.reduce((sum, r) => sum + r[field], 0);

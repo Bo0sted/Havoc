@@ -65,6 +65,7 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
         // server means someone else (or no one) on the other one.
         user: remote ? null : { id: userId, name: message.username, avatar: message.avatar },
         findMember: (name) => server.client.findMember(name, remote ? undefined : channelCode),
+        isGuest: (id) => server.client.isGuest(id, remote ? undefined : channelCode),
         // Resolves with this person's next message here that `accepts`
         // takes, or null after `ms`. Other messages go on as usual.
         awaitAnswer: (accepts, ms) => new Promise((resolve) => {
@@ -123,9 +124,11 @@ function output(home, { channelCode, message, threadId }, remoteName, prefix) {
   const note = remoteName ? `🛰️ *Remote: running on **${remoteName}***\n` : '';
   let noted = false;
   return {
+    // `content` is text, or a list of sections that each stay on one page.
     reply: async (content) => {
       noted = true;
-      for (const piece of chunks(note + content)) home.client.send(channelCode, piece, where);
+      const text = Array.isArray(content) ? [note + content[0], ...content.slice(1)] : note + content;
+      for (const piece of chunks(text)) home.client.send(channelCode, piece, where);
     },
     // A reply that can be changed later: resolves with edit(content). If
     // the edit can't happen, the new text is sent as a reply to the command,
@@ -142,6 +145,13 @@ function output(home, { channelCode, message, threadId }, remoteName, prefix) {
       if (note && !noted) home.client.send(channelCode, note.trim(), where);
       noted = false;
       await home.client.sendImage(channelCode, buffer, filename, mime, where);
+    },
+    // A message that notifies `member` ({ id, name }): its own message where
+    // the command was typed, not silent and not a reply (a reply would
+    // notify the person who typed the command too). `build` gets the @mention.
+    ping: async (member, build) => {
+      const login = await home.client.loginName(member.id, channelCode);
+      home.client.send(channelCode, note + build(`@${login ?? member.name}`), { threadId, silent: false });
     },
     notHere: async () => {
       noted = true;

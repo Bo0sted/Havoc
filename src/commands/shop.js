@@ -59,18 +59,18 @@ function list(prefix, user, server, db) {
   };
   const tools = (k) => kind(k).map((t) => line(t, `up to ${t.max} ${KINDS[k].unit}`));
   const promos = user ? PROMOS.filter((p) => !db.promoClaimed(server.key, user.id, p.id)) : [];
+  // One section per category, so a long list splits between categories.
   return [
-    `**Shop** (buy with \`${prefix}shop <number>\`, e.g. \`${prefix}shop 1\`)`,
-    '🟢 = Items you have',
-    `${KINDS.pole.emoji} **Fishing poles**`, ...tools('pole'),
-    `${KINDS.pickaxe.emoji} **Pickaxes**`, ...tools('pickaxe'),
-    '🪪 **Licenses** (yours for good)', ...LICENSES.map((l) => line(l, `needed ${l.needed}`)),
-    `${KINDS.gun.emoji} **Guns** (never break; 1 round a hunt)`, ...kind('gun').map((g) => line(g, game(g))),
-    '📦 **Ammo**', ...AMMO.map((a) => line(a, `${a.rounds} rounds for the ${gunFor(a).name}`)),
-    `${KINDS.safe.emoji} **Safes** (room for things outside your Backpack)`, ...kind('safe').map((t) => line(t, `holds ${t.space.toLocaleString('en-US')} items`)),
-    '⚡ **Recovery** (used right away, one an hour)', ...BOOSTS.map((b) => line(b, gives(b))),
-    ...(promos.length ? ['🎁 **Your promos**', ...promos.map((p) => `\`${prefix}shop promo ${p.id}\` ${p.label}`)] : []),
-  ].join('\n');
+    [`**Shop** (buy with \`${prefix}shop <number>\`, e.g. \`${prefix}shop 1\`)`, '🟢 = Items you have'],
+    [`${KINDS.pole.emoji} **Fishing poles**`, ...tools('pole')],
+    [`${KINDS.pickaxe.emoji} **Pickaxes**`, ...tools('pickaxe')],
+    ['🪪 **Licenses** (yours for good)', ...LICENSES.map((l) => line(l, `needed ${l.needed}`))],
+    [`${KINDS.gun.emoji} **Guns** (never break; 1 round a hunt)`, ...kind('gun').map((g) => line(g, game(g)))],
+    ['📦 **Ammo**', ...AMMO.map((a) => line(a, `${a.rounds} rounds for the ${gunFor(a).name}`))],
+    [`${KINDS.safe.emoji} **Safes** (room for things outside your Backpack)`, ...kind('safe').map((t) => line(t, `holds ${t.space.toLocaleString('en-US')} items`))],
+    ['⚡ **Recovery** (used right away, one an hour)', ...BOOSTS.map((b) => line(b, gives(b)))],
+    ...(promos.length ? [['🎁 **Your promos**', ...promos.map((p) => `\`${prefix}shop promo ${p.id}\` ${p.label}`)]] : []),
+  ].map((section) => section.join('\n'));
 }
 
 // By number, or by name. A name that fits several items (a store selling

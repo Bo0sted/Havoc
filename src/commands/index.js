@@ -13,6 +13,7 @@ import mine from './mine.js';
 import hunt from './hunt.js';
 import money from './money.js';
 import sell from './sell.js';
+import give from './give.js';
 import safe from './safe.js';
 import shop from './shop.js';
 import gdp from './gdp.js';
@@ -31,4 +32,4 @@ import pfp from './pfp.js';
 import status from './status.js';
 import consoleCommand from './console.js';
 
-export default [help, cat, dog, fox, duck, funfact, dadjoke, advice, pokemon, fish, mine, hunt, daily, lottery, hangman, money, sell, safe, shop, top, gdp, bet, blowup, id, cooldown, botchannel, energy, remote, pfp, status, consoleCommand];
+export default [help, cat, dog, fox, duck, funfact, dadjoke, advice, pokemon, fish, mine, hunt, daily, lottery, hangman, money, sell, safe, give, shop, top, gdp, bet, blowup, id, cooldown, botchannel, energy, remote, pfp, status, consoleCommand];

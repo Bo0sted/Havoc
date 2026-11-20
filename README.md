@@ -12,6 +12,7 @@ any number of servers at once and answers messages that start with a prefix
 | `?hunt small` / `?hunt big` | go hunting with a Hunting License, a gun and ammo; big game risks a hospital bill | 5sec |
 | `?money` / `?stats [@user]` | money, energy, licenses, tools, Backpack and safe, yours or someone else's | 5sec |
 | `?safe` | move things between your Backpack and your safe, or sell from the safe | 5sec |
+| `?give <user> <amount>` / `?give <user> <item> [amount\|all]` (also `?zelle`) | give someone cash, or items from your Backpack; they get a ping | 5sec |
 | `?blowup [@user]` | "explodes" a picture: the first attached image, else the named user's, else yours | 15sec |
 | `?id [@user]` | a Haven user id | 1hr |
 | `?cooldown` | **admin**: list cooldowns, `?cooldown <command> <X><sec\|min\|hr>` to override one on this server, `?cooldown reset <command>` to remove it | none |
@@ -19,7 +20,8 @@ any number of servers at once and answers messages that start with a prefix
 
 How it behaves:
 - Answers only in server channels (never DMs), in forum topics and threads
-  where the command was typed. Every message is silent and a reply to the command.
+  where the command was typed. Every message is silent and a reply to the command,
+  except pings (a milestone, a gift received), which notify.
 - Cooldowns are per person, per command, per server. Admins skip them.
   Non-admins get no response at all to admin commands.
 - `?fish` and `?money` are economy commands. A guest account gets

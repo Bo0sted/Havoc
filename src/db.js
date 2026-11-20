@@ -377,6 +377,23 @@ export function openDb(path) {
       }
       return true;
     }),
+    // A gift: `cents` from one wallet to the other and each { item, qty }
+    // from one Backpack to the other, recorded in 'gifts' as `value` cents
+    // given and received. False (and nothing changes) when the giver
+    // doesn't have all of it.
+    give: (server, from, to, { cents = 0, lots = [] }, value) => atomic(() => {
+      if (cents > 0) {
+        if (s.takeCents.run(cents, server, from, cents).changes === 0) return false;
+        s.addCents.run(server, to, cents);
+      }
+      for (const { item, qty } of lots) {
+        if (s.backpack.take.run(qty, server, from, item, qty).changes === 0) return false;
+        s.backpack.add.run(server, to, item, qty);
+      }
+      s.lose.run(server, from, 'gifts', value);
+      s.earn.run(server, to, 'gifts', value);
+      return true;
+    }),
     // A hospital bill of up to `bill` cents: cash first, then Backpack items,
     // then safe items, in the order `takeable(id)` ranks them ({ price, rank },
     // or null for anything that can't be sold and so is never taken). An

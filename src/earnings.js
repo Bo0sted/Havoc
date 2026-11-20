@@ -17,6 +17,7 @@ export const STREAMS = {
   hangman: { label: 'Hangman', emoji: '🔤', lost: 'lost in penalties' },
   betting: { label: 'Betting', emoji: '🎲' },
   promos: { label: 'Promos', emoji: '🎁' },
+  gifts: { label: 'Gifts', emoji: '🤝', earned: 'received', lost: 'given' },
   milestones: { label: 'Milestones', emoji: '🏅' },
   shop: { label: 'Shop', emoji: '🛒', lost: 'spent' },
 };
