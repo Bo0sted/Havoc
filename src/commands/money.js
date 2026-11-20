@@ -53,7 +53,9 @@ export default {
       assets.push(`${KINDS.safe.emoji} ${safe.name} (${box.used}/${box.space}): ${contents(box.rows)}`);
     }
 
-    return reply(`${header}${overview.join('\n')}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}`);
+    const settings = ['**Profile Settings**', `Gifts: ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'}`];
+
+    return reply(`${header}${overview.join('\n')}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}\n\n${settings.join('\n')}`);
   },
 };
 

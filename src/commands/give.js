@@ -6,6 +6,7 @@ import { gained, lost } from '../colors.js';
 // Gives cash, or items from your Backpack, to someone else. It all moves
 // first; then a few seconds of dots for show, the result, and a ping for
 // the receiver. Counted as 'gifts' (given / received) in ?stats extra.
+// `?give off` stops anyone (admins too) giving you anything until `?give on`.
 const CASH = [
   '💸 Laundering it through a laundromat',
   "💸 Explaining to the IRS that it's a gift",
@@ -44,21 +45,24 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default {
   name: 'give',
-  aliases: ['zelle'],
+  aliases: ['zelle', 'gift'],
   category: 'economy',
-  usage: ['<user> <amount>', '<user> <item> [amount|all]'],
-  description: 'give someone cash, or items from your Backpack',
+  usage: ['<user> <amount>', '<user> <item> [amount|all]', 'off', 'on'],
+  description: 'give someone cash, or items from your Backpack; `off` stops anyone giving you anything, `on` allows it again',
   cooldown: 5_000,
   economy: true,
   async run({ prefix, args, user, server, db, track, findMember, isGuest, reply, replyEditable, ping, notHere }) {
     if (!user) return notHere();
-    const usage = `Usage: \`${prefix}give <user> <amount>\` or \`${prefix}give <user> <item> [amount|all]\``;
+    const usage = `Usage: \`${prefix}give <user> <amount>\` or \`${prefix}give <user> <item> [amount|all]\`, or \`${prefix}give off\` / \`${prefix}give on\` to stop or allow gifts to you`;
+    const toggle = args.length === 1 && ['off', 'on'].includes(args[0].toLowerCase()) && args[0].toLowerCase();
+    if (toggle) return reply(setGifts(prefix, db, server, user, toggle === 'off'));
     if (args.length < 2) return reply(usage);
 
     const { member, rest, query } = await splitTarget(findMember, args);
     if (!member) return reply(`I can't find anyone called **${query}** here.`);
     if (member.id === user.id) return reply("You can't give things to yourself.");
     if (member.id === server.client.user?.id) return reply("That's sweet, but I can't accept gifts.");
+    if (db.giftsOff(server.key, member.id)) return reply(`🚫 **${member.name}** isn't accepting gifts.`);
     if (await isGuest(member.id)) return reply("Guest accounts can't receive gifts.");
 
     const cents = rest.length === 1 ? parseCash(rest[0]) : null;
@@ -104,3 +108,13 @@ export default {
     return ping(member, (mention) => `🎁 ${mention}, ${user.name} gave you ${describe(gift.lots)}.`);
   },
 };
+
+function setGifts(prefix, db, server, user, off) {
+  const changed = db.setGiftsOff(server.key, user.id, off);
+  if (off) {
+    return changed
+      ? `🚫 Gifts are off: nobody can give you cash or items here. Turn them back on with \`${prefix}give on\`.`
+      : `Gifts are already off. Turn them back on with \`${prefix}give on\`.`;
+  }
+  return changed ? '🎁 Gifts are on again: people can give you cash and items.' : 'Gifts are already on.';
+}

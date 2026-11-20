@@ -82,6 +82,10 @@ const SCHEMA = `
     PRIMARY KEY (server, user_id, stream)
   );
   CREATE TABLE IF NOT EXISTS migrations (name TEXT NOT NULL PRIMARY KEY);
+  CREATE TABLE IF NOT EXISTS gifts_off (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL,
+    PRIMARY KEY (server, user_id)
+  );
 `;
 
 // The Backpack is the `items` table (it was the Safety Deposit Box, so
@@ -151,6 +155,9 @@ export function openDb(path) {
     earnings: q('SELECT stream, earned, lost FROM earnings WHERE server = ? AND user_id = ? ORDER BY rowid'),
     earn: q('INSERT INTO earnings (server, user_id, stream, earned) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET earned = earned + excluded.earned'),
     lose: q('INSERT INTO earnings (server, user_id, stream, lost) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET lost = lost + excluded.lost'),
+    giftsOff: q('SELECT 1 FROM gifts_off WHERE server = ? AND user_id = ?'),
+    turnGiftsOff: q('INSERT OR IGNORE INTO gifts_off (server, user_id) VALUES (?, ?)'),
+    turnGiftsOn: q('DELETE FROM gifts_off WHERE server = ? AND user_id = ?'),
     migrated: q('SELECT 1 FROM migrations WHERE name = ?'),
     migrate: q('INSERT INTO migrations (name) VALUES (?)'),
     everyWallet: q('SELECT server, user_id, cents FROM wallets'),
@@ -259,6 +266,11 @@ export function openDb(path) {
     // Fires one round. False if there wasn't one.
     useAmmo: (server, userId, ammo) => s.useAmmo.run(server, userId, ammo).changes > 0,
     licenses: (server, userId) => s.licenses.all(server, userId).map((r) => r.license),
+    // Whether someone turned gifts off (?give off): nobody can give them anything.
+    giftsOff: (server, userId) => !!s.giftsOff.get(server, userId),
+    // True when it changed (false if it was already that way).
+    setGiftsOff: (server, userId, off) =>
+      (off ? s.turnGiftsOff.run(server, userId) : s.turnGiftsOn.run(server, userId)).changes > 0,
     // Pays for a license. False, and nothing changes, if they can't afford it.
     buyLicense: (server, userId, license, cost) => atomic(() => {
       if (s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
