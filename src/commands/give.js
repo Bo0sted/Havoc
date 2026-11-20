@@ -21,6 +21,24 @@ const ITEMS = [
   '📦 Shipping it with 2-second delivery',
   '📦 Wiping off the fingerprints',
 ];
+// When the receiver has gifts off (owner-picked, cash or items to match).
+const BLOCKED_CASH = [
+  '🚫 The bank flagged it as suspicious and froze the transfer.',
+  '🚫 They slid the envelope right back across the table.',
+  "🚫 Zelle says the recipient isn't enrolled.",
+  '🚫 They said "I don\'t take handouts."',
+  '🚫 The check bounced. Somehow, in reverse.',
+  "🚫 They don't accept bribes.",
+  '🚫 They mailed it back with a polite note.',
+];
+const BLOCKED_ITEMS = [
+  '🚫 The package came back marked "Return to Sender".',
+  '🚫 Customs seized it at the border.',
+  "🚫 They saw the delivery truck and pretended they weren't home.",
+  '🚫 There\'s a "No Soliciting" sign on their door.',
+  '🚫 They refused to sign for it.',
+  '🚫 Their dog chased the delivery guy off the porch.',
+];
 const DOTS = ['.', '..', '...'];
 const FRAME = 850;
 
@@ -62,10 +80,12 @@ export default {
     if (!member) return reply(`I can't find anyone called **${query}** here.`);
     if (member.id === user.id) return reply("You can't give things to yourself.");
     if (member.id === server.client.user?.id) return reply("That's sweet, but I can't accept gifts.");
-    if (db.giftsOff(server.key, member.id)) return reply(`🚫 **${member.name}** isn't accepting gifts.`);
     if (await isGuest(member.id)) return reply("Guest accounts can't receive gifts.");
 
     const cents = rest.length === 1 ? parseCash(rest[0]) : null;
+    if (db.giftsOff(server.key, member.id)) {
+      return reply(`${pick(cents !== null ? BLOCKED_CASH : BLOCKED_ITEMS)} (**${member.name}** has turned off receiving gifts)`);
+    }
     let gift;
     if (cents !== null) {
       if (cents < 1) return reply(usage);
