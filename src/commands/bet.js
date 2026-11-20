@@ -133,8 +133,10 @@ async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns
     track.lost('betting', wager - back);
     track.earned('charms', charm.back - back);
     track.lost('charms', back - charm.back);
-    track.lost('charms', charm.extra && db.takeUpTo(server.key, user.id, charm.extra));
-    return charm.line;
+    // Gambler's Curse takes the loss again, down to $0 at most.
+    const taken = charm.extra ? db.takeUpTo(server.key, user.id, charm.extra) : 0;
+    track.lost('charms', taken);
+    return typeof charm.line === 'function' ? charm.line(taken) : charm.line;
   };
   // An admin's ?cooldown override replaces the per-game cooldowns.
   const wait = (ms) => cooldowns.setRemaining(server.key, cmd, user.id, db.overrides(server.key).get(cmd.name) ?? ms);
@@ -196,7 +198,8 @@ async function spin({ wager, settle, wait, cmd, cooldowns, user, server, db, rep
 
 // What a bet charm does once the game says what it pays back (`back` of
 // `wager`): { back, extra, line }. `extra` is more to take from their cash
-// (never into debt). A charm is used up even when it changes nothing.
+// (never below $0), and then `line` is given what was taken. A charm is used
+// up even when it changes nothing.
 function charmed(charm, wager, back) {
   if (!charm) return { back, extra: 0, line: '' };
   const said = (text) => ` ${kickedIn(charm)} ${text}`;
@@ -223,7 +226,7 @@ function charmed(charm, wager, back) {
     }
     case 'gamblers_curse':
       if (loss <= 0) break;
-      return { back, extra: loss, line: said(`You lose that much again (up to ${lost(loss)}).`) };
+      return { back, extra: loss, line: (taken) => said(taken ? `Your loss is doubled: ${lost(taken)} more.` : 'Your loss is doubled.') };
     default:
   }
   return { back, extra: 0, line: said("It didn't change anything this time.") };

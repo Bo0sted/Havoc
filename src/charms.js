@@ -64,7 +64,7 @@ export const CHARMS = [
   { id: 'friday_the_13th', type: 'misfortune', severity: 'severe', emoji: '📅', name: 'Friday the 13th', on: 'hunt',
     text: 'Your next hunt sends you to the hospital.' },
   { id: 'gamblers_curse', type: 'misfortune', severity: 'severe', emoji: '💀', name: "Gambler's Curse", on: 'bet',
-    text: 'If you lose money on your next bet of $1,000 or more, you lose that much again (never into debt).' },
+    text: 'If you lose money on a bet of $1,000 or more, the amount you lose is doubled.' },
 ];
 
 export const charmById = new Map(CHARMS.map((c) => [c.id, c]));
