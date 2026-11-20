@@ -24,15 +24,16 @@ export default {
   async run({ prefix, args, home, servers, reply }) {
     const link = args.length === 1 && parse(args[0].replace(/^<|>$/g, ''));
     if (!link) return reply(usage(prefix));
-    // The link's host can differ from the address Havoc connects to (a
-    // tunnel, a proxy), so the channel says which server it's on.
-    if (!home.client.channel(link.channel)) {
-      const other = servers.find((s) => s !== home && s.client?.channel(link.channel));
-      return reply(other ? `That message is on **${other.name}**. Use \`${prefix}delete\` there.` : "I can't find that channel.");
-    }
-    const message = await home.client.messageById(link.channel, link.message);
+    // Whichever of Havoc's servers has that channel (this one first). The
+    // link's host can differ from the address Havoc connects to (a tunnel, a
+    // proxy), so the channel says which server it's on, not the host. Only
+    // Havoc's own messages can go, so this works from any server.
+    const target = [home, ...servers.filter((s) => s !== home)].find((s) => s.client?.channel(link.channel));
+    if (!target) return reply("I can't find that channel.");
+    const { client } = target;
+    const message = await client.messageById(link.channel, link.message);
     if (!message) return reply("I can't find that message.");
-    if (message.user_id !== home.client.user.id) return reply('I can only delete my own messages.');
-    return reply(await home.client.deleteMessage(link.channel, link.message) ? '🗑️ Deleted.' : "Haven wouldn't let me delete that message.");
+    if (message.user_id !== client.user.id) return reply('I can only delete my own messages.');
+    return reply(await client.deleteMessage(link.channel, link.message) ? '🗑️ Deleted.' : "Haven wouldn't let me delete that message.");
   },
 };
