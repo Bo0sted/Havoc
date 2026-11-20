@@ -10,7 +10,7 @@
 // on a small server, so it happens on a worker thread and the bot keeps
 // answering everyone else meanwhile.
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs';
-import { randomInt } from 'node:crypto';
+import { randomInt, createHash } from 'node:crypto';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import sharp from 'sharp';
 import gifenc from 'gifenc';
@@ -20,6 +20,9 @@ const { GIFEncoder, quantize, applyPalette } = gifenc;
 
 export const ART_SIZE = 360;
 export const ART_RADIUS = 168;
+// The GIF's size and palette (owner: keep them exactly like this).
+const SIZE = ART_SIZE;
+const COLORS = 256;
 const ASSETS = new URL('../assets/wheel/', import.meta.url);
 const CACHE = new URL('../out/wheel/', import.meta.url);
 const BACKGROUND = [30, 31, 34];
@@ -49,10 +52,10 @@ function frameTimes(total) {
   return times;
 }
 
-// The pointer (on the right, pointing in) and the hub, drawn once.
+// The pointer (on the right, pointing in) and the hub, drawn once at SIZE.
 async function overlay() {
   const c = ART_SIZE / 2;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${ART_SIZE}" height="${ART_SIZE}">
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}" viewBox="0 0 ${ART_SIZE} ${ART_SIZE}">
     <polygon points="${ART_SIZE - 2},${c - 15} ${ART_SIZE - 2},${c + 15} ${ART_SIZE - 32},${c}" fill="#f8fafc" stroke="#111827" stroke-width="3" stroke-linejoin="round"/>
     <circle cx="${c}" cy="${c}" r="24" fill="#111827" stroke="#facc15" stroke-width="4"/>
     <circle cx="${c}" cy="${c}" r="8" fill="#facc15"/></svg>`;
@@ -76,20 +79,23 @@ async function art(name) {
   return result;
 }
 
-// One frame: the art turned `deg` clockwise on the background, with the
-// pointer and hub on top.
+// One frame (SIZE square): the art turned `deg` clockwise on the
+// background, scaled down, with the pointer and hub on top.
 function frame({ pixels, top }, deg) {
   const n = ART_SIZE;
-  const out = new Uint8ClampedArray(n * n * 4);
-  const c = (n - 1) / 2;
+  const m = SIZE;
+  const k = n / m; // art pixels per GIF pixel
+  const out = new Uint8ClampedArray(m * m * 4);
+  const c = (n - 1) / 2, cm = (m - 1) / 2;
   const a = (-deg * Math.PI) / 180; // read from where each pixel was before turning
-  const cos = Math.cos(a), sin = Math.sin(a);
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      const o = (y * n + x) * 4;
-      const dx = x - c, dy = y - c;
+  const cos = Math.cos(a) * k, sin = Math.sin(a) * k;
+  const reach = ((ART_RADIUS + 4) / k) ** 2;
+  for (let y = 0; y < m; y++) {
+    for (let x = 0; x < m; x++) {
+      const o = (y * m + x) * 4;
+      const dx = x - cm, dy = y - cm;
       let r = BACKGROUND[0], g = BACKGROUND[1], b = BACKGROUND[2];
-      if (dx * dx + dy * dy <= (ART_RADIUS + 4) ** 2) {
+      if (dx * dx + dy * dy <= reach) {
         const sx = c + dx * cos - dy * sin, sy = c + dx * sin + dy * cos;
         const x0 = Math.floor(sx), y0 = Math.floor(sy), fx = sx - x0, fy = sy - y0;
         if (x0 >= 0 && y0 >= 0 && x0 < n - 1 && y0 < n - 1) {
@@ -127,21 +133,23 @@ export async function render(name, index, variant) {
   const sampleA = frame(wheel, 0), sampleB = frame(wheel, 360 / slices / 2);
   const both = new Uint8ClampedArray(sampleA.length * 2);
   both.set(sampleA); both.set(sampleB, sampleA.length);
-  const palette = quantize(both, 256);
+  const palette = quantize(both, COLORS);
 
   const gif = GIFEncoder();
   const times = frameTimes(total);
   times.forEach((t, f) => {
     const delay = f === times.length - 1 ? HOLD : times[f + 1] - t;
-    gif.writeFrame(applyPalette(frame(wheel, turned(t, total)), palette), ART_SIZE, ART_SIZE, { palette, delay, repeat: -1 });
+    gif.writeFrame(applyPalette(frame(wheel, turned(t, total)), palette), SIZE, SIZE, { palette, delay, repeat: -1 });
   });
   gif.finish();
   return Buffer.from(gif.bytes());
 }
 
-// A GIF's name: the wheel, slice and variant, and the wheel's fingerprint,
-// so a changed wheel never reuses an old picture.
-const keyOf = (name, index, variant) => `${name}-${index}-${variant}-${artFingerprint(WHEELS[name])}`;
+// A GIF's name: the wheel, slice and variant, the wheel's fingerprint and
+// one of how spins are drawn, so a changed wheel (or a change to the drawing
+// below) never reuses an old picture: the warm-up deletes and redraws them.
+const LOOK = createHash('sha256').update(JSON.stringify([SIZE, COLORS, STEP, SPIN, HOLD, VARIANTS, BACKGROUND])).digest('hex').slice(0, 8);
+const keyOf = (name, index, variant) => `${name}-${index}-${variant}-${artFingerprint(WHEELS[name])}-${LOOK}`;
 const fileOf = (key) => new URL(`${key}.gif`, CACHE);
 const ready = (key) => existsSync(fileOf(key));
 
@@ -220,5 +228,8 @@ if (!isMainThread && workerData?.name) {
   parentPort.postMessage(gif, [gif.buffer]);
 }
 
-// How long after posting the result can be told without spoiling it.
-export const REVEAL = SPIN + 1_500;
+// How long after posting the result can be told without spoiling it: the
+// spin, plus time for players' apps to download the GIF before it starts
+// playing (only a first view downloads: a reposted GIF is the same file, so
+// it's usually cached). Owner's pick: 9 seconds in all.
+export const REVEAL = SPIN + 3_000;
