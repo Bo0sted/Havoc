@@ -175,19 +175,44 @@ function draw(name, index, variant) {
   return job;
 }
 
+// While GIFs are still being drawn (the first start, or after a wheel
+// changes), at most PLAYER_DRAWS spins at a time can have one drawn for them,
+// so a rush of players can't start enough workers to run a small server out
+// of memory. Spins whose GIF is ready are never limited.
+const PLAYER_DRAWS = 2;
+let playerDraws = 0;
+export const BUSY = 'Sorry, but I cannot process your request at this time. I recently rebooted and I’m currently limiting the number of simultaneous users who can run this command. Please wait for another user to finish, or try again later.';
+
 // A spin of `name` landing on slice `index`: { key, gif } where `key` names
-// this exact GIF (for upload caching). Any variant that's already drawn is
-// used; only when none is, one is drawn on the spot, after `waiting()` (so
-// the player can be told it takes a few seconds).
+// this exact GIF (for upload caching), or null when it would need drawing and
+// PLAYER_DRAWS are already being drawn (tell the player BUSY). Any variant
+// that's already drawn is used; one that's being drawn (by the warm-up or
+// another spin) is waited for; only when neither, one is drawn on the spot.
+// `waiting()` is called first when there's a wait (to say it takes a few seconds).
 export async function spinGif(name, index, waiting) {
   const keys = VARIANTS.map((_, v) => keyOf(name, index, v));
   const drawn = keys.filter(ready);
   let key = drawn[randomInt(drawn.length || 1)];
   if (!key) {
-    const variant = randomInt(VARIANTS.length);
-    key = keys[variant];
-    await waiting?.();
-    await draw(name, index, variant);
+    key = keys.find((k) => drawing.has(k));
+    if (key) {
+      await waiting?.();
+      await drawing.get(key);
+    } else {
+      if (playerDraws >= PLAYER_DRAWS) return null;
+      playerDraws += 1;
+      try {
+        const variant = randomInt(VARIANTS.length);
+        key = keys[variant];
+        // Started before anything is awaited, so a spin landing on this
+        // slice at the same moment finds it and waits for it instead.
+        const job = draw(name, index, variant);
+        await waiting?.();
+        await job;
+      } finally {
+        playerDraws -= 1;
+      }
+    }
   }
   return { key, gif: () => readFileSync(fileOf(key)) };
 }

@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { ITEMS, itemById, formatMoney } from '../items.js';
 import { WHEELS } from '../wheel.js';
-import { spinGif, REVEAL } from '../wheel-gif.js';
+import { spinGif, REVEAL, BUSY } from '../wheel-gif.js';
 import { claimGame } from '../games.js';
 import { placeOf } from '../storage.js';
 import { hospitalize, takeable, billLine } from '../hospital.js';
@@ -41,7 +41,7 @@ export default {
   description: 'spin the wheel: 2 free spins every 24 hours, then paid spins on a riskier wheel ($5,000, doubling each time); `odds` shows every slice',
   cooldown: 5_000,
   economy: true,
-  async run({ prefix, args, user, server, db, track, reply, replyImageOnce, notHere }) {
+  async run({ cmd, prefix, args, user, server, db, cooldowns, track, reply, replyImageOnce, notHere }) {
     const sub = args[0]?.toLowerCase();
     if (sub === 'odds') return reply(odds());
     if (args.length && !['paid', 'buy'].includes(sub)) return reply(`Usage: \`${prefix}wheel\`, \`${prefix}wheel paid\` or \`${prefix}wheel odds\``);
@@ -49,14 +49,14 @@ export default {
     const release = claimGame(server.key, user.id);
     if (!release) return;
     try {
-      return await play({ paid: !!sub, prefix, user, server, db, track, reply, replyImageOnce });
+      return await play({ paid: !!sub, cmd, prefix, user, server, db, cooldowns, track, reply, replyImageOnce });
     } finally {
       release();
     }
   },
 };
 
-async function play({ paid, prefix, user, server, db, track, reply, replyImageOnce }) {
+async function play({ paid, cmd, prefix, user, server, db, cooldowns, track, reply, replyImageOnce }) {
   const now = Date.now();
   const day = dayOf(db, server.key, user.id, now);
   const price = priceOf(day.paid);
@@ -74,6 +74,11 @@ async function play({ paid, prefix, user, server, db, track, reply, replyImageOn
   let index = randomInt(WHEELS[name].length);
   const waiting = () => reply(GENERATING);
   let gif = await spinGif(name, index, waiting);
+  if (!gif) {
+    // Too many spins being drawn right now: nothing is spent, not even the cooldown.
+    cooldowns.setRemaining(server.key, cmd, user.id, 0);
+    return reply(BUSY);
+  }
   if (paid) {
     const balance = db.cents(server.key, user.id);
     if (!db.buyWheelSpin(server.key, user.id, price, day.since, day.free, day.paid + 1)) {
@@ -102,8 +107,10 @@ async function play({ paid, prefix, user, server, db, track, reply, replyImageOn
 }
 
 // Posts the spin and waits for it to stop. The spin has already happened,
-// so if the GIF can't be posted the result is told straight away instead.
+// so if there's no GIF (a "spin again" while drawing is busy) or it can't be
+// posted, the result is told straight away instead.
 export async function show(gif, replyImageOnce) {
+  if (!gif) return;
   try {
     await replyImageOnce(gif.key, gif.gif, 'wheel.gif', 'image/gif');
   } catch (err) {

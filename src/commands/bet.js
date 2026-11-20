@@ -6,7 +6,7 @@ import { matchAnswer, optionsLine } from '../answers.js';
 import { green, red, gained, lost } from '../colors.js';
 import { drawCharm, kickedIn, BET_CHARM_CAP } from '../charms.js';
 import { WHEELS } from '../wheel.js';
-import { spinGif } from '../wheel-gif.js';
+import { spinGif, BUSY } from '../wheel-gif.js';
 import { show, GENERATING } from './wheel.js';
 
 const MIN = 10_000; // $100; there's no maximum
@@ -139,7 +139,7 @@ async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns
   // An admin's ?cooldown override replaces the per-game cooldowns.
   const wait = (ms) => cooldowns.setRemaining(server.key, cmd, user.id, db.overrides(server.key).get(cmd.name) ?? ms);
   try {
-    if (game.spins) return await spin({ wager, settle, wait, user, server, db, replyImageOnce, reply });
+    if (game.spins) return await spin({ wager, settle, wait, cmd, cooldowns, user, server, db, replyImageOnce, reply });
     const mine = game.draw();
     // Only the game and its choices while it's on: odds live in ?bet.
     const edit = await replyEditable(`${game.ask} (waiting for your answer)\n${optionsLine(game.options)}`);
@@ -171,12 +171,19 @@ async function play({ game, name, cmd, prefix, args, user, server, db, cooldowns
 
 // ?bet wheel: the wager is already held. The wheel spins (only the GIF
 // while it does), then the result says what it landed on.
-async function spin({ wager, settle, wait, user, server, db, replyImageOnce, reply }) {
+async function spin({ wager, settle, wait, cmd, cooldowns, user, server, db, replyImageOnce, reply }) {
   const index = randomInt(WHEELS.bet.length);
   const { times, emoji } = WHEELS.bet[index];
   const back = Math.round(wager * times);
   const result = back > wager ? 'win' : back === wager ? 'tie' : 'lose';
-  await show(await spinGif('bet', index, () => reply(GENERATING)), replyImageOnce);
+  const gif = await spinGif('bet', index, () => reply(GENERATING));
+  if (!gif) {
+    // Too many spins being drawn right now: the wager goes back, and the cooldown too.
+    settle(wager);
+    cooldowns.setRemaining(server.key, cmd, user.id, 0);
+    return reply(BUSY);
+  }
+  await show(gif, replyImageOnce);
   const charmLine = settle(back, result);
   wait(GAMES.wheel.cooldown[result]);
   const outcome = {
