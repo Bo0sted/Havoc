@@ -10,11 +10,12 @@ import { placeOf } from '../storage.js';
 // High risk, high reward: a Hunting License, a gun and 1 round per hunt.
 // Small game (any gun, 1 energy) pays a bit more than fishing with little
 // risk; big game (a shotgun or better, 2 energy) pays about twice as much
-// per energy but lands you in the hospital far more often. The gun only
-// changes that hospital chance (the rest goes to missing), never the finds.
-// For someone worth ~$50k, small game is ~$225 an energy and big game ~$440
-// (fishing ~$210); big game stops paying at ~$150k worth with the shotgun,
-// ~$190k with the rifle and ~$230k with the Barrett.
+// per energy but lands you in the hospital far more often. Misses are rare
+// (5%, any gun). The gun only changes that hospital chance (what it saves
+// goes to common game), so a better gun is safer, not richer.
+// For someone worth ~$50k, small game is ~$227 an energy and big game ~$435
+// to ~$465 (fishing ~$212); big game stops paying at ~$150k worth with the
+// shotgun, ~$190k with the rifle and ~$230k with the Barrett.
 const MODES = {
   small: {
     energy: 1,
@@ -22,8 +23,8 @@ const MODES = {
     from: 'hunt_small',
     tiers: () => [
       { tier: 'hospital', weight: 3 },
-      { tier: 'nothing', weight: 20 },
-      { tier: 'common', weight: 45 },
+      { tier: 'nothing', weight: 5 },
+      { tier: 'common', weight: 60 },
       { tier: 'rare', weight: 25 },
       { tier: 'epic', weight: 7 },
     ],
@@ -45,8 +46,8 @@ const MODES = {
     from: 'hunt_big',
     tiers: (gun) => [
       { tier: 'hospital', weight: gun.hospital },
-      { tier: 'nothing', weight: 41 - gun.hospital },
-      { tier: 'common', weight: 25 },
+      { tier: 'nothing', weight: 5 },
+      { tier: 'common', weight: 61 - gun.hospital },
       { tier: 'rare', weight: 20 },
       { tier: 'epic', weight: 8 },
       { tier: 'legendary', weight: 6 },

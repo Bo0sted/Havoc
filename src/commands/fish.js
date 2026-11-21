@@ -9,13 +9,14 @@ export default gatherCommand({
   verb: 'caught',
   activity: 'Fishing',
   // Little work, small catches: a quarter of mining's energy and about a
-  // quarter of its payout (~$210 a cast), so both pay the same per energy.
+  // quarter of its payout (~$212 a cast), so both pay the same per energy.
   energy: 1,
-  // How often each kind of catch comes up (weights, not percentages).
+  // How often each kind of catch comes up (weights, not percentages). Misses
+  // are rare (owner's call: catching something common feels better).
   tiers: [
-    { tier: 'nothing', weight: 18 },
+    { tier: 'nothing', weight: 5 },
     { tier: 'trash', weight: 18 },
-    { tier: 'common', weight: 50 },
+    { tier: 'common', weight: 63 },
     { tier: 'rare', weight: 10 },
     { tier: 'epic', weight: 3 },
     { tier: 'legendary', weight: 1 },

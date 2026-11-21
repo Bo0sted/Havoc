@@ -13,9 +13,9 @@ export default gatherCommand({
   // (epic+) is about 1 swing in 6.
   energy: 4,
   tiers: [
-    { tier: 'nothing', weight: 10 },
+    { tier: 'nothing', weight: 5 },
     { tier: 'trash', weight: 20 },
-    { tier: 'common', weight: 34 },
+    { tier: 'common', weight: 39 },
     { tier: 'rare', weight: 20 },
     { tier: 'epic', weight: 12 },
     { tier: 'legendary', weight: 4 },

@@ -61,7 +61,7 @@ const GAMES = {
   // where it lands. Fair: the multipliers average exactly 1×.
   wheel: {
     chance: WHEELS.bet.filter((s) => s.times > 1).length / WHEELS.bet.length,
-    odds: '1 in 4 to win · pays up to 8× (half the slices are 0×)',
+    odds: '2 in 5 to win, 1 in 5 tie (wager back) · pays up to 4×',
     spins: true,
     cooldown: { win: 15_000, lose: 15_000, tie: 15_000 },
   },

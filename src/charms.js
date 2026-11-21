@@ -35,7 +35,7 @@ export const CHARMS = [
   { id: 'lodestone', type: 'lucky', severity: 'strong', emoji: '🧲', name: 'Lodestone', on: 'gather',
     text: 'Your next fish, mine or hunt catches two items of different rarities (it waits until your Backpack has room for both).' },
   { id: 'loaded_dice', type: 'lucky', severity: 'strong', emoji: '🎲', name: 'Loaded Dice', on: 'bet', longShot: true,
-    text: 'If you win your next bet of $1,000 or more on a game with 1-in-3 odds or worse (rps, dice, wheel), the payout is doubled (up to $10,000 extra).' },
+    text: 'If you win your next bet of $1,000 or more on a game with 1-in-3 odds or worse (rps, dice), the payout is doubled (up to $10,000 extra).' },
   { id: 'four_leaf_clover', type: 'lucky', severity: 'strong', emoji: '🍀', name: 'Four-Leaf Clover', on: 'gather', charges: 2,
     text: 'Your next two fish, mine or hunt are guaranteed epic.' },
   { id: 'guardian_angel', type: 'lucky', severity: 'strong', emoji: '👼', name: 'Guardian Angel', on: 'bet',

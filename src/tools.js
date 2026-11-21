@@ -35,7 +35,8 @@ export const TOOLS = [
 
   // Guns fire one round of their `ammo` per hunt. `big` guns can hunt big
   // game, where `hospital` is the % chance of ending up there (bigger guns
-  // keep you further from the animal). Finds are the same with every gun.
+  // keep you further from the animal). What a better gun saves on the
+  // hospital becomes common game; the other finds are the same with every gun.
   { id: 'marlin_60', kind: 'gun', name: 'Marlin Model 60', price: 250_000, ammo: 'ammo_22lr', big: false },
   { id: 'mossberg_500', kind: 'gun', name: 'Mossberg 500', price: 1_000_000, ammo: 'ammo_12ga', big: true, hospital: 15 },
   { id: 'remington_700', kind: 'gun', name: 'Remington 700', price: 2_500_000, ammo: 'ammo_308', big: true, hospital: 10 },

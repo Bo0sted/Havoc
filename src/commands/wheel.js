@@ -86,7 +86,7 @@ function menu({ prefix, isAdmin, user, server, db, cooldowns, commands }) {
     '',
     "**Free wheel:** Two free spins every day, on the house. You could win cash, a rare item, a burst of energy or a lucky charm... or get bitten by a snake. Your spins come back 24 hours after you use the first one.",
     '**Paid wheel:** Out of free spins and feeling lucky? This wheel is riskier, but the prizes are way bigger, like a $40,000 jackpot or a legendary item. Your first spin costs $5,000, and each one after that costs double, until your free spins come back.',
-    '**Bet wheel:** Put some money on the line and let the wheel decide. You could lose it all or win up to 8 times your bet.',
+    '**Bet wheel:** Put some money on the line and let the wheel decide. You could lose it all or win up to 4 times your bet.',
   ].join('\n');
 }
 

@@ -33,9 +33,9 @@ export const WHEELS = {
       { kind: 'irs', rate: 0.10, max: 200_000, name: 'an IRS audit' },
       { kind: 'again', name: 'a free spin' },
     ] },
-    { emoji: '💀', label: 'MILD', color: C.misfortune, kind: 'charm', type: 'misfortune', severity: 'mild' },
+    { emoji: '🍀', label: 'MILD', color: C.lucky, kind: 'charm', type: 'lucky', severity: 'mild' },
     { emoji: '💎', label: 'EPIC', color: C.good, kind: 'items', tier: 'epic', count: 1 },
-    { emoji: '💸', label: '-$500', color: C.bad, kind: 'lose', cents: 50_000 },
+    { emoji: '💵', label: '$500', color: C.cash, kind: 'cash', cents: 50_000 },
     { emoji: '🍀', label: 'MILD', color: C.lucky, kind: 'charm', type: 'lucky', severity: 'mild' },
     { emoji: '🔄', label: 'AGAIN', color: C.good, kind: 'again' },
     { emoji: '🥷', label: 'THIEF', color: C.bad, kind: 'pickpocket' },
@@ -43,10 +43,11 @@ export const WHEELS = {
     { emoji: '💀', label: 'STRONG', color: C.misfortune, kind: 'charm', type: 'misfortune', severity: 'strong' },
     { emoji: '🪙', label: 'FLIP', color: C.swing, kind: 'flip', cents: 100_000 },
   ],
-  // Paid spins: high risk, high reward, and a little less back than they cost.
+  // Paid spins: high risk, high reward. The first one each day gives back
+  // about what it costs; the doubling price makes the rest lose.
   paid: [
     { emoji: '🎰', label: '$40,000', color: C.jackpot, kind: 'cash', cents: 4_000_000 },
-    { emoji: '💸', label: '-$5,000', color: C.paidBad, kind: 'lose', cents: 500_000 },
+    { emoji: '💰', label: '$5,000', color: C.paidCash, kind: 'cash', cents: 500_000 },
     { emoji: '🍀', label: 'STRONG', color: C.paidLucky, kind: 'charm', type: 'lucky', severity: 'strong' },
     { emoji: '💰', label: '$5,000', color: C.paidCash, kind: 'cash', cents: 500_000 },
     { emoji: '💀', label: 'STRONG', color: C.paidMisfortune, kind: 'charm', type: 'misfortune', severity: 'strong' },
@@ -62,8 +63,8 @@ export const WHEELS = {
     { emoji: '🍀', label: 'STRONG', color: C.paidLucky, kind: 'charm', type: 'lucky', severity: 'strong' },
     { emoji: '💸', label: '-$5,000', color: C.paidBad, kind: 'lose', cents: 500_000 },
     { emoji: '💰', label: '$5,000', color: C.paidCash, kind: 'cash', cents: 500_000 },
-    { emoji: '💀', label: 'STRONG', color: C.paidMisfortune, kind: 'charm', type: 'misfortune', severity: 'strong' },
-    { emoji: '🚔', label: 'JAIL', color: C.paidBad, kind: 'jail', ms: 30 * MIN },
+    { emoji: '🍀', label: 'STRONG', color: C.paidLucky, kind: 'charm', type: 'lucky', severity: 'strong' },
+    { emoji: '🏆', label: 'LEGENDARY', color: C.paidGood, kind: 'items', tier: 'legendary', count: 1 },
     { emoji: '🃏', label: 'WILD', color: C.paidSwing, kind: 'wild', options: [
       { kind: 'cash', cents: 1_000_000, name: '$10,000' },
       { kind: 'robbed', name: 'a robbery' },
@@ -71,13 +72,14 @@ export const WHEELS = {
     ] },
   ],
   // ?bet wheel: what the wager is multiplied by. Exactly fair: the 20
-  // multipliers add up to 20, so on average you get your bet back. Just the
-  // numbers, with an emoji only on the 8× jackpot (owner's call).
-  bet: [8, 0, 1, 0, 1.5, 0, 0.5, 0, 1, 0, 3, 0, 1.5, 0, 1, 0, 2, 0, 0.5, 0].map((x) => ({
-    emoji: x === 8 ? '🎰' : null,
+  // multipliers add up to 20, so on average you get your bet back. It wins
+  // as often as it loses (8 slices each, 4 ties), so it feels fair too
+  // (owner's call). Just the numbers, with an emoji only on the 4× jackpot.
+  bet: [4, 0, 1.5, 1, 0.5, 1.5, 0, 1, 1.5, 0.5, 0, 1.5, 1, 1.5, 0, 0.5, 1.5, 1, 1.5, 0].map((x) => ({
+    emoji: x === 4 ? '🎰' : null,
     label: `${x}×`,
     size: 22, // a bigger label: the number is all there is
-    color: { 0: '#374151', 0.5: '#b45309', 1: '#2563eb', 1.5: '#16a34a', 2: '#0d9488', 3: '#7c3aed', 8: '#eab308' }[x],
+    color: { 0: '#374151', 0.5: '#b45309', 1: '#2563eb', 1.5: '#16a34a', 4: '#eab308' }[x],
     kind: 'multiplier',
     times: x,
   })),

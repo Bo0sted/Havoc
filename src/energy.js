@@ -5,8 +5,8 @@
 export const DEFAULTS = { max: 60, every: 60_000 };
 
 // Recovery items, sold in ?shop and used up on the spot, one per
-// BOOST_COOLDOWN. A point of energy catches ~$210 on average (fish and mine
-// alike), so each costs about $300 more than the catches it buys (at the
+// BOOST_COOLDOWN. A point of energy catches ~$212 on average (fish and mine
+// alike), so each costs about $190-260 more than the catches it buys (at the
 // default bar of 60): they never pay, with room for a lucky legendary.
 // Check these again if catch odds or item prices change. Ids are stored
 // (as the time of the last one), so never rename one.
