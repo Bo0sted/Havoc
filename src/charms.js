@@ -22,7 +22,9 @@ export const SEVERITIES = {
 };
 
 // on: gather (fish, mine, hunt), hunt, break (a pole or pickaxe about to
-// break), tool (a pole or pickaxe), bet or sell.
+// break), tool (a pole or pickaxe), bet, sell or buy (a ?shop purchase).
+// `ownSlice` charms are only won on their own wheel slice, never a charm slice.
+// A Coupon's `cap` is the most it takes off a purchase.
 export const CHARMS = [
   { id: 'second_wind', type: 'lucky', severity: 'mild', emoji: '🔋', name: 'Second Wind', on: 'gather',
     text: 'Your next fish, mine or hunt costs no energy.' },
@@ -40,10 +42,14 @@ export const CHARMS = [
     text: 'Your next two fish, mine or hunt are guaranteed epic.' },
   { id: 'guardian_angel', type: 'lucky', severity: 'strong', emoji: '👼', name: 'Guardian Angel', on: 'bet',
     text: "If you lose money on your next bet of $1,000 or more (a timeout penalty too), it's refunded (up to $10,000)." },
+  { id: 'coupon', type: 'lucky', severity: 'strong', emoji: '🎟️', name: 'Coupon', on: 'buy', ownSlice: true, cap: 1_000_000,
+    text: 'Your next shop purchase is free, up to $10,000 (anything pricier gets $10,000 off). Pick carefully: it works on whatever you buy next, even a $25 fishing pole.' },
   { id: 'midas_touch', type: 'lucky', severity: 'insane', emoji: '👑', name: 'Midas Touch', on: 'sell',
     text: 'The next time you sell, one unit of the most valuable item in that sale sells for double. Pick carefully: it works on whatever you sell next, even a Rusty Nail.' },
   { id: 'pot_of_gold', type: 'lucky', severity: 'insane', emoji: '🌈', name: 'Pot of Gold', on: 'gather', legendary: true,
     text: 'Your next fish, mine or big-game hunt is guaranteed legendary.' },
+  { id: 'golden_coupon', type: 'lucky', severity: 'insane', emoji: '🎫', name: 'Golden Coupon', on: 'buy', ownSlice: true, cap: 3_000_000,
+    text: 'Your next shop purchase is free, up to $30,000 (anything pricier gets $30,000 off). It works on whatever you buy next, but with a Coupon too, the smaller one is used if it covers the price.' },
 
   { id: 'black_cat', type: 'misfortune', severity: 'mild', emoji: '🐈‍⬛', name: 'Black Cat', on: 'gather',
     text: 'Your next fish, mine or hunt catches nothing.' },
@@ -71,7 +77,7 @@ export const charmById = new Map(CHARMS.map((c) => [c.id, c]));
 
 // Whether a charm can fire on this use:
 //   { use: 'fish' | 'mine' | 'hunt_small' | 'hunt_big', breaking, room }
-//   { use: 'bet', wager, chance }      { use: 'sell', valuable }
+//   { use: 'bet', wager, chance }      { use: 'sell', valuable }      { use: 'buy', price }
 function fits(charm, use) {
   const gathering = ['fish', 'mine', 'hunt_small', 'hunt_big'].includes(use.use);
   const hunting = use.use.startsWith('hunt');
@@ -88,17 +94,22 @@ function fits(charm, use) {
     case 'break': return false;
     case 'bet': return use.use === 'bet' && use.wager >= BET_CHARM_MIN && (!charm.longShot || use.chance <= 1 / 3);
     case 'sell': return use.use === 'sell' && (!charm.valuable || use.valuable);
+    case 'buy': return use.use === 'buy';
     default: return false;
   }
 }
 
 // One charm from someone's Pocket that fits this use, picked at random, or
-// null. It isn't used up until `use()` is called (once the command really
+// null. Coupons aren't random: the smallest that covers the price, else the
+// biggest. It isn't used up until `use()` is called (once the command really
 // happens).
 export function drawCharm(db, server, userId, use) {
   const rows = db.pocket(server, userId).filter((r) => charmById.has(r.charm) && fits(charmById.get(r.charm), use));
   if (!rows.length) return null;
-  const row = rows[randomInt(rows.length)];
+  const cap = (r) => charmById.get(r.charm).cap;
+  const row = use.use === 'buy'
+    ? rows.sort((a, b) => cap(a) - cap(b)).find((r) => cap(r) >= use.price) ?? rows.at(-1)
+    : rows[randomInt(rows.length)];
   return { charm: charmById.get(row.charm), use: () => db.useCharm(row.id) };
 }
 
@@ -147,4 +158,4 @@ export function findCharm(text) {
 }
 
 // Charms of a type and severity, for the wheel's charm slices.
-export const charmsOf = (type, severity) => CHARMS.filter((c) => c.type === type && c.severity === severity);
+export const charmsOf = (type, severity) => CHARMS.filter((c) => c.type === type && c.severity === severity && !c.ownSlice);

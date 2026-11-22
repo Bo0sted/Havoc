@@ -13,18 +13,18 @@ import { placeOf } from '../storage.js';
 // per energy but lands you in the hospital far more often. Misses are rare
 // (5%, any gun). The gun only changes that hospital chance (what it saves
 // goes to common game), so a better gun is safer, not richer.
-// For someone worth ~$50k, small game is ~$227 an energy and big game ~$435
-// to ~$465 (fishing ~$212); big game stops paying at ~$150k worth with the
-// shotgun, ~$190k with the rifle and ~$230k with the Barrett.
+// For someone worth ~$50k, small game is ~$239 an energy and big game ~$466
+// to ~$487 (fishing ~$212); big game stops paying at ~$190k worth with the
+// shotgun, ~$270k with the rifle and ~$355k with the Barrett.
 const MODES = {
   small: {
     energy: 1,
     game: 'small game',
     from: 'hunt_small',
     tiers: () => [
-      { tier: 'hospital', weight: 3 },
+      { tier: 'hospital', weight: 2 },
       { tier: 'nothing', weight: 5 },
-      { tier: 'common', weight: 60 },
+      { tier: 'common', weight: 61 },
       { tier: 'rare', weight: 25 },
       { tier: 'epic', weight: 7 },
     ],

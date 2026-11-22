@@ -5,11 +5,30 @@ import { matchAnswer, optionsLine } from '../answers.js';
 import { claimGame } from '../games.js';
 import { formatWait } from '../duration.js';
 import { green, gained, lost } from '../colors.js';
+import { drawCharm, kickedIn } from '../charms.js';
 
 // Trading in a tool when upgrading is worth half of what's left of it
 // (guns and safes don't wear, so half their price).
 const TRADE_IN = 0.5;
 const tradeIn = (tool, uses) => Math.round(TRADE_IN * tool.price * (breakable(tool) ? Math.max(0, tool.max - uses) / tool.max : 1));
+
+// A Coupon from the Pocket takes up to its cap off a purchase of `price`:
+// `due` is what's left to pay, and `spend()` uses the Coupon up once the
+// purchase went through, giving the line the reply starts with.
+function couponFor(db, server, userId, price, track) {
+  const drawn = drawCharm(db, server, userId, { use: 'buy', price });
+  const off = drawn ? Math.min(price, drawn.charm.cap) : 0;
+  return {
+    due: price - off,
+    spend() {
+      if (!off) return '';
+      drawn.use();
+      track.earned('charms', off);
+      return `${kickedIn(drawn.charm)} It took ${gained(off)} off.\n`;
+    },
+  };
+}
+const paid = (cents) => (cents ? lost(cents) : 'free');
 
 export default {
   name: 'shop',
@@ -107,25 +126,28 @@ function buy(text, { prefix, user, server, db, track, reply, awaitAnswer }) {
   const ammo = current?.kind === 'gun' && ammoById.get(current.ammo);
   const credit = current ? tradeIn(current, held.uses) + (rounds ? Math.round(TRADE_IN * rounds * ammo.price / ammo.rounds) : 0) : 0;
   const cost = Math.max(0, tool.price - credit);
+  const coupon = couponFor(db, server.key, user.id, cost, track);
   const balance = db.cents(server.key, user.id);
-  const bought = tool.kind === 'gun' ? db.buyGun(server.key, user.id, tool.id, cost) : db.buyTool(server.key, user.id, tool.kind, tool.id, cost);
-  if (!bought) return reply(`That costs ${formatMoney(cost)}. You only have ${formatMoney(balance)}.`);
+  const bought = tool.kind === 'gun' ? db.buyGun(server.key, user.id, tool.id, coupon.due) : db.buyTool(server.key, user.id, tool.kind, tool.id, coupon.due);
+  if (!bought) return reply(`That costs ${formatMoney(coupon.due)}. You only have ${formatMoney(balance)}.`);
   track.lost('shop', cost);
+  const charmed = coupon.spend();
   const now = formatMoney(db.cents(server.key, user.id));
   const old = rounds ? `${current.name} (and ${rounds} ${rounds === 1 ? 'round' : 'rounds'})` : current?.name;
-  return reply(credit
-    ? `🛒 You traded in your ${old} for ${gained(credit)} and bought a ${tool.name} for ${lost(cost)}. You now have ${now}.`
-    : `🛒 You bought a ${tool.name} for ${lost(cost)}. You now have ${now}.`);
+  return reply(charmed + (credit
+    ? `🛒 You traded in your ${old} for ${gained(credit)} and bought a ${tool.name} for ${paid(coupon.due)}. You now have ${now}.`
+    : `🛒 You bought a ${tool.name} for ${paid(coupon.due)}. You now have ${now}.`));
 }
 
 function buyLicense(license, { user, server, db, track, reply }) {
   if (db.licenses(server.key, user.id).includes(license.id)) return reply(`You already have a ${license.name}.`);
+  const coupon = couponFor(db, server.key, user.id, license.price, track);
   const balance = db.cents(server.key, user.id);
-  if (!db.buyLicense(server.key, user.id, license.id, license.price)) {
-    return reply(`That costs ${formatMoney(license.price)}. You only have ${formatMoney(balance)}.`);
+  if (!db.buyLicense(server.key, user.id, license.id, coupon.due)) {
+    return reply(`That costs ${formatMoney(coupon.due)}. You only have ${formatMoney(balance)}.`);
   }
   track.lost('shop', license.price);
-  return reply(`🪪 You bought a ${license.name} for ${lost(license.price)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+  return reply(`${coupon.spend()}🪪 You bought a ${license.name} for ${paid(coupon.due)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
 
 // Ammo only for the gun someone has: anything else wouldn't fit it.
@@ -133,13 +155,14 @@ function buyAmmo(ammo, { prefix, user, server, db, track, reply }) {
   const gun = toolById.get(db.tool(server.key, user.id, 'gun')?.item);
   if (!gun) return reply(`That's ammo for the ${gunFor(ammo).name}, and you don't have a gun. Check \`${prefix}shop\`.`);
   if (gun.ammo !== ammo.id) return reply(`That won't fit your ${gun.name}. It takes ${ammoById.get(gun.ammo).name} (number ${numberOf(ammoById.get(gun.ammo))}).`);
+  const coupon = couponFor(db, server.key, user.id, ammo.price, track);
   const balance = db.cents(server.key, user.id);
-  if (!db.buyAmmo(server.key, user.id, ammo.id, ammo.rounds, ammo.price)) {
-    return reply(`That costs ${formatMoney(ammo.price)}. You only have ${formatMoney(balance)}.`);
+  if (!db.buyAmmo(server.key, user.id, ammo.id, ammo.rounds, coupon.due)) {
+    return reply(`That costs ${formatMoney(coupon.due)}. You only have ${formatMoney(balance)}.`);
   }
   track.lost('shop', ammo.price);
   const rounds = db.ammo(server.key, user.id).get(ammo.id);
-  return reply(`📦 You bought ${ammo.rounds} rounds of ${ammo.name} for ${lost(ammo.price)} (${rounds} now). You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+  return reply(`${coupon.spend()}📦 You bought ${ammo.rounds} rounds of ${ammo.name} for ${paid(coupon.due)} (${rounds} now). You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
 
 const YES_NO = { y: 'yes', yeah: 'yes', yep: 'yes', sure: 'yes', ok: 'yes', okay: 'yes', n: 'no', nah: 'no', nope: 'no' };
@@ -147,11 +170,12 @@ const YES_NO = { y: 'yes', yeah: 'yes', yep: 'yes', sure: 'yes', ok: 'yes', okay
 // Recovery items are used on the spot. One that would top the bar past its
 // max asks first, since the extra is lost.
 async function buyBoost(boost, { user, server, db, track, reply, awaitAnswer }) {
+  let coupon = couponFor(db, server.key, user.id, boost.price, track);
   const refused = (bar) => {
     if (bar.boostIn) return `You've had a recovery item in the last hour. Your next one is ready in ${formatWait(bar.boostIn)}.`;
     if (bar.points >= bar.max) return `Your energy is already full (${bar.max}/${bar.max}).`;
     const balance = db.cents(server.key, user.id);
-    return balance < boost.price ? `That costs ${formatMoney(boost.price)}. You only have ${formatMoney(balance)}.` : null;
+    return balance < coupon.due ? `That costs ${formatMoney(coupon.due)}. You only have ${formatMoney(balance)}.` : null;
   };
   let bar = energyOf(db, server.key, user.id);
   if (refused(bar)) return reply(refused(bar));
@@ -169,16 +193,17 @@ async function buyBoost(boost, { user, server, db, track, reply, awaitAnswer }) 
     } finally {
       release();
     }
-    // Things may have changed while they thought about it.
+    // Things may have changed while they thought about it (the Coupon spent, even).
     bar = energyOf(db, server.key, user.id);
+    coupon = couponFor(db, server.key, user.id, boost.price, track);
     if (refused(bar)) return reply(refused(bar));
   }
 
   const now = Date.now();
   const { points } = boosted(bar, boost);
-  if (!db.buyBoost(server.key, user.id, boost.price, points, points >= bar.max ? now : bar.since, now)) return reply(refused(bar));
+  if (!db.buyBoost(server.key, user.id, coupon.due, points, points >= bar.max ? now : bar.since, now)) return reply(refused(bar));
   track.lost('shop', boost.price);
-  return reply(`⚡ You bought ${/^[aeiou]/i.test(boost.name) ? 'an' : 'a'} ${boost.name} for ${lost(boost.price)}. Energy: ${points}/${bar.max}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+  return reply(`${coupon.spend()}⚡ You bought ${/^[aeiou]/i.test(boost.name) ? 'an' : 'a'} ${boost.name} for ${paid(coupon.due)}. Energy: ${points}/${bar.max}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
 
 function redeem(text, { user, server, db, track, reply }) {

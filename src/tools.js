@@ -38,9 +38,9 @@ export const TOOLS = [
   // keep you further from the animal). What a better gun saves on the
   // hospital becomes common game; the other finds are the same with every gun.
   { id: 'marlin_60', kind: 'gun', name: 'Marlin Model 60', price: 250_000, ammo: 'ammo_22lr', big: false },
-  { id: 'mossberg_500', kind: 'gun', name: 'Mossberg 500', price: 1_000_000, ammo: 'ammo_12ga', big: true, hospital: 15 },
-  { id: 'remington_700', kind: 'gun', name: 'Remington 700', price: 2_500_000, ammo: 'ammo_308', big: true, hospital: 10 },
-  { id: 'barrett_50', kind: 'gun', name: 'Barrett .50 Cal', price: 7_500_000, ammo: 'ammo_50bmg', big: true, hospital: 7 },
+  { id: 'mossberg_500', kind: 'gun', name: 'Mossberg 500', price: 1_000_000, ammo: 'ammo_12ga', big: true, hospital: 10 },
+  { id: 'remington_700', kind: 'gun', name: 'Remington 700', price: 2_500_000, ammo: 'ammo_308', big: true, hospital: 6 },
+  { id: 'barrett_50', kind: 'gun', name: 'Barrett .50 Cal', price: 7_500_000, ammo: 'ammo_50bmg', big: true, hospital: 4 },
 
   // Safes only differ in how many items they hold. Bigger ones cost more per
   // space, so keeping a few valuables is cheap and hoarding isn't.

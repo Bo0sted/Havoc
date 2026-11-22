@@ -295,7 +295,7 @@ export function openDb(path) {
     ammo: (server, userId) => new Map(s.ammo.all(server, userId).map((r) => [r.ammo, r.rounds])),
     // Pays for a box of ammo. False, and nothing changes, if they can't afford it.
     buyAmmo: (server, userId, ammo, rounds, cost) => atomic(() => {
-      if (s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
+      if (cost > 0 && s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
       s.addAmmo.run(server, userId, ammo, rounds);
       return true;
     }),
@@ -309,7 +309,7 @@ export function openDb(path) {
       (off ? s.turnGiftsOff.run(server, userId) : s.turnGiftsOn.run(server, userId)).changes > 0,
     // Pays for a license. False, and nothing changes, if they can't afford it.
     buyLicense: (server, userId, license, cost) => atomic(() => {
-      if (s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
+      if (cost > 0 && s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
       s.addLicense.run(server, userId, license);
       return true;
     }),
@@ -424,7 +424,7 @@ export function openDb(path) {
     // Pays for a recovery item and applies it. False, and nothing changes,
     // if they can't afford it.
     buyBoost: (server, userId, cost, points, since, at) => atomic(() => {
-      if (s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
+      if (cost > 0 && s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
       s.boost.run(server, userId, points, since, at);
       return true;
     }),

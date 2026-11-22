@@ -6,7 +6,7 @@ import { claimGame } from '../games.js';
 import { placeOf } from '../storage.js';
 import { hospitalize, takeable, billLine } from '../hospital.js';
 import { surge, energyOf } from '../energy.js';
-import { charmsOf, givesCharm, charmName, TYPES, SEVERITIES } from '../charms.js';
+import { charmById, charmsOf, givesCharm, charmName, TYPES, SEVERITIES } from '../charms.js';
 import { gained, lost, green, red } from '../colors.js';
 import { formatWait } from '../duration.js';
 
@@ -172,9 +172,6 @@ function land(slice, ctx) {
       return { text: `${slice.emoji} You won ${gained(slice.cents)}!${slice.cents >= 1_000_000 ? ' **JACKPOT!**' : ''}` };
     case 'lose':
       return { text: `💸 You lost a bet with a stranger. ${collect(slice.cents)}` };
-    case 'flip':
-      if (randomInt(2)) { give(slice.cents); return { text: `🪙 The coin says heads: ${gained(slice.cents)}!` }; }
-      return { text: `🪙 The coin says tails. ${collect(slice.cents)}` };
     case 'irs': {
       const owed = Math.min(Math.round(cash() * slice.rate), slice.max);
       const taken = owed ? take(owed) : 0;
@@ -232,11 +229,12 @@ function land(slice, ctx) {
       return { text: `🚔 Jail! No economy commands for ${formatWait(slice.ms)} (out <t:${stamp(until)}:R>). \`?stats\` still works.` };
     }
     case 'charm': {
-      const pool = charmsOf(slice.type, slice.severity);
+      // A slice naming its charm (a Coupon) always gives that one.
+      const pool = slice.charm ? [charmById.get(slice.charm)] : charmsOf(slice.type, slice.severity);
       const charm = pool[randomInt(pool.length)];
       givesCharm(db, server.key, user.id, charm);
       const [severity, paint] = SEVERITIES[slice.type][slice.severity];
-      return { text: `${TYPES[slice.type].emoji} You got a ${paint(severity)} ${TYPES[slice.type].label.toLowerCase()}: ${charm.emoji} ${charmName(charm)}! ${charm.text}` };
+      return { text: `${TYPES[slice.type].emoji} You got ${/^[aeiou]/i.test(severity) ? 'an' : 'a'} ${paint(severity)} ${TYPES[slice.type].label.toLowerCase()}: ${charm.emoji} ${charmName(charm)}! ${charm.text}` };
     }
     case 'wild': {
       const option = slice.options[randomInt(slice.options.length)];
@@ -265,7 +263,7 @@ function steal(id, { server, user, db, track }) {
 // good outcomes in green and bad ones in red (gambles stay plain). No emojis
 // on the lines: owner's call, it was too much.
 const GROUPS = [
-  ['Money', ['cash', 'lose', 'irs', 'flip']],
+  ['Money', ['cash', 'lose', 'irs']],
   ['Charms', ['charm']],
   ['Items & perks', ['items', 'surge', 'again', 'wild']],
   ['Bad luck', ['snake', 'hospital', 'pickpocket', 'robbed', 'jail']],
@@ -275,8 +273,7 @@ function odds() {
     cash: () => [green, formatMoney(s.cents)],
     lose: () => [red, `Lose ${formatMoney(s.cents)} (cash first, then items)`],
     irs: () => [red, `IRS audit: ${Math.round(s.rate * 100)}% of your cash, up to ${formatMoney(s.max)}`],
-    flip: () => [String, `Coin flip: win or lose ${formatMoney(s.cents)}`],
-    charm: () => [s.type === 'lucky' ? green : red, `${SEVERITIES[s.type][s.severity][0]} ${TYPES[s.type].label.toLowerCase()}`],
+    charm: () => [s.type === 'lucky' ? green : red, `${SEVERITIES[s.type][s.severity][0]} ${TYPES[s.type].label.toLowerCase()}${s.charm ? `: ${charmById.get(s.charm).name}` : ''}`],
     items: () => [green, s.count > 1 ? `${s.count} ${s.tier} items` : `${/^[aeiou]/.test(s.tier) ? 'An' : 'A'} ${s.tier} item`],
     surge: () => [green, 'Energy Surge: double energy max for 12 hours'],
     again: () => [green, 'Spin again'],

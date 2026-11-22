@@ -41,10 +41,11 @@ export const WHEELS = {
     { emoji: '🥷', label: 'THIEF', color: C.bad, kind: 'pickpocket' },
     { emoji: '💰', label: '$2,000', color: C.cash, kind: 'cash', cents: 200_000 },
     { emoji: '💀', label: 'STRONG', color: C.misfortune, kind: 'charm', type: 'misfortune', severity: 'strong' },
-    { emoji: '🪙', label: 'FLIP', color: C.swing, kind: 'flip', cents: 100_000 },
+    { emoji: '🎟️', label: 'COUPON', color: C.lucky, kind: 'charm', type: 'lucky', severity: 'strong', charm: 'coupon' },
   ],
   // Paid spins: high risk, high reward. The first one each day gives back
-  // about what it costs; the doubling price makes the rest lose.
+  // about what it costs (a bit more for someone who wants something from the
+  // shop, with the Golden Coupon); the doubling price makes the rest lose.
   paid: [
     { emoji: '🎰', label: '$40,000', color: C.jackpot, kind: 'cash', cents: 4_000_000 },
     { emoji: '💰', label: '$5,000', color: C.paidCash, kind: 'cash', cents: 500_000 },
@@ -57,7 +58,7 @@ export const WHEELS = {
     { emoji: '🦹', label: 'ROBBED', color: C.paidBad, kind: 'robbed' },
     { emoji: '🤑', label: '$10,000', color: C.paidCash, kind: 'cash', cents: 1_000_000 },
     { emoji: '💀', label: 'SEVERE', color: C.paidMisfortune, kind: 'charm', type: 'misfortune', severity: 'severe' },
-    { emoji: '🪙', label: 'DOUBLE', color: C.paidSwing, kind: 'flip', cents: 500_000 },
+    { emoji: '🎫', label: 'COUPON', color: C.paidLucky, kind: 'charm', type: 'lucky', severity: 'insane', charm: 'golden_coupon' },
     { emoji: '💎', label: '2 EPICS', color: C.paidGood, kind: 'items', tier: 'epic', count: 2 },
     { emoji: '🏥', label: 'HOSPITAL', color: C.paidBad, kind: 'hospital' },
     { emoji: '🍀', label: 'STRONG', color: C.paidLucky, kind: 'charm', type: 'lucky', severity: 'strong' },
