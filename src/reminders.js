@@ -49,16 +49,42 @@ export function whenProblem(at, now = Date.now()) {
   return null;
 }
 
+// Phones swap these in for what was typed (curly quotes, long dashes, the
+// three-dot character, unbreakable spaces); they go back to the keyboard's.
+const TYPED_AS = [
+  [/[‘’‚‛′]/g, "'"],
+  [/[“”„‟″]/g, '"'],
+  [/[‐-―−]/g, '-'],
+  [/…/g, '...'],
+  [/[   ]/g, ' '],
+];
+
+// Reminder text is anyone's input, posted back by Havoc, so only what's on a
+// standard keyboard stays (letters, digits, space, Enter and the symbol
+// keys): no emoji, invisible or direction-flipping characters, or stacked
+// accents. Accented and "fancy" letters become plain ones first (é is e),
+// and the gaps left behind close up.
+export function keyboardOnly(text) {
+  const typed = TYPED_AS.reduce((t, [from, to]) => t.replace(from, to), text.normalize('NFKD'));
+  return typed.replace(/[^\x20-\x7E\n]/g, '').replace(/ {2,}/g, ' ').replace(/ +$/gm, '');
+}
+
 // A reminder's text on one short line, for lists.
 export function preview(text, max = 60) {
   const line = text.replace(/\s+/g, ' ').trim();
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
+// The reminder's own text never pings anyone: Haven pings "@name",
+// "@everyone", "@here" and "@Role" only with the @ starting a word, so those
+// lose it ("@everyone" becomes "everyone"); one inside a word (an email) stays.
+const unmention = (text) => text.replace(/(?<!\w)@+/g, '');
+
 // A reminder's message: the owner's mention (none in a 1:1 DM), its text and
 // fields, then how to snooze it, or once it's snoozed, until when.
 export function reminderText(r, mention, prefix, { late = false, snoozedUntil = null } = {}) {
-  const lines = ['# ⏰ Reminder', mention ? `${mention} ${r.text}` : r.text, '', `\`Scheduled on:\` <t:${sec(r.created)}:R>`];
+  const text = unmention(keyboardOnly(r.text));
+  const lines = ['# ⏰ Reminder', mention ? `${mention} ${text}` : text, '', `\`Scheduled on:\` <t:${sec(r.created)}:R>`];
   if (r.snoozes) lines.push(`\`Snoozed:\` ${r.snoozes} ${r.snoozes === 1 ? 'time' : 'times'}`);
   if (late) lines.push(`\`Was due:\` <t:${sec(r.due)}:R>`);
   if (snoozedUntil) {

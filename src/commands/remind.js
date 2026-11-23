@@ -1,4 +1,4 @@
-import { parseWhen, whenProblem, preview, MAX_TEXT, MAX_REMINDERS } from '../reminders.js';
+import { parseWhen, whenProblem, preview, keyboardOnly, MAX_TEXT, MAX_REMINDERS } from '../reminders.js';
 
 const sec = (ms) => Math.floor(ms / 1000);
 
@@ -44,7 +44,7 @@ export default {
     const here = { dm: ctx.dm, id: ctx.dm?.id ?? ctx.channel?.id };
     const sub = args[0].toLowerCase();
     if (sub === 'list') return list(ctx, here);
-    if (sub === 'delete') return remove(ctx, here, after(typed, 2));
+    if (sub === 'delete') return remove(ctx, here, keyboardOnly(after(typed, 2)).trim());
     return create(ctx, typed);
   },
 };
@@ -54,7 +54,9 @@ async function create({ prefix, args, channel, threadId, dm, server, db, user, r
   if (!when) return reply(`That's not a time I understand. Try \`${prefix}remind 2hr take the trash out\`, or \`${prefix}remind\` for every kind of time.`);
   const problem = whenProblem(when.at);
   if (problem) return reply(problem);
-  const text = after(typed, 1 + when.used);
+  const typedText = after(typed, 1 + when.used);
+  const text = keyboardOnly(typedText).trim();
+  if (!text && typedText) return reply('Reminders can only use keyboard characters (letters, numbers, spaces and punctuation), and nothing else was left.');
   if (!text) return reply(`What should I remind you about? For example \`${prefix}remind ${args.slice(0, when.used).join(' ')} take the trash out\``);
   if (text.length > MAX_TEXT) return reply(`That's ${text.length.toLocaleString('en-US')} characters. A reminder can be ${MAX_TEXT.toLocaleString('en-US')} at most.`);
   // A guest's account is gone soon after they leave, so nobody would get it.
