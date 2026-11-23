@@ -1,7 +1,7 @@
-// The server's key log (see Encryption): every key Havoc made or accepted,
-// for which server and who it's for. All of it, over as many messages as it
-// takes (sent one after another at Havoc's usual pace). Numbered oldest first,
-// so a number always means the same entry.
+// Havoc's key log for every server it's on (see Encryption): every key it
+// made or accepted, on which server and who it's for. Oldest first (#1 is the
+// first key ever made), all of it, over as many messages as it takes (sent
+// one after another at Havoc's usual pace). An entry's number never changes.
 const sec = (ms) => Math.floor(ms / 1000);
 
 // Who an entry's key is for. Entries from before 'For' was recorded say it
@@ -14,24 +14,27 @@ const recipients = (details) => {
 export default {
   name: 'keys',
   usage: ['', '<number>'],
-  description: "every encryption key Havoc made or accepted on this server, and who it's for; a number shows one in full",
+  description: "every encryption key Havoc made or accepted, on every server, and who it's for; a number shows one in full",
   admin: true,
-  async run({ prefix, args, server, db, reply }) {
-    const log = db.keyLog(server.key);
-    if (!log.length) return reply(`🔑 The key log for **${server.name}** is empty.`);
+  async run({ prefix, args, servers, db, reply }) {
+    const nameOf = (key) => servers.find((s) => s.key === key)?.name ?? key;
+    const forWhom = (e) => recipients(e.details).replace('this server', nameOf(e.server));
+    const log = db.keyLog();
+    if (!log.length) return reply('🔑 The key log is empty.');
     if (args.length) {
-      const entry = /^\d+$/.test(args[0]) && log[Number(args[0]) - 1];
-      if (!entry) return reply(`There's no entry ${args[0]}. They go from 1 to ${log.length} (\`${prefix}keys\` lists them).`);
-      const details = entry.details.some(([l]) => l === 'For') ? entry.details : [['For', recipients(entry.details)], ...entry.details];
+      const entry = log.find((e) => String(e.id) === args[0].replace(/^#/, ''));
+      if (!entry) return reply(`There's no entry ${args[0]}. \`${prefix}keys\` lists them.`);
       return reply([
-        `🔑 **Key log #${args[0]}**`,
+        `🔑 **Key log #${entry.id}**`,
         `**When:** <t:${sec(entry.at)}:f> (<t:${sec(entry.at)}:R>)`,
-        `**Server:** ${server.name}`,
+        `**Server:** ${nameOf(entry.server)}`,
         `**What:** ${entry.summary}`,
-        ...details.map(([label, value]) => `**${label}:** ${value}`),
+        `**For:** ${forWhom(entry)}`,
+        ...entry.details.filter(([label]) => label !== 'For').map(([label, value]) => `**${label}:** ${value}`),
       ].join('\n'));
     }
-    const lines = log.map((e, i) => `${i + 1}. <t:${sec(e.at)}:R> · **${server.name}** · ${e.summary} · for ${recipients(e.details)}`).reverse();
-    return reply(`🔑 **Key log for ${server.name}** (${log.length}, newest first)\n${lines.join('\n')}\n\`${prefix}keys <number>\` shows one in full.`);
+    // "#3", not "3.": Haven renumbers lines starting "3. " as a list of its own.
+    const lines = log.map((e) => `**#${e.id}** · <t:${sec(e.at)}:R> · **${nameOf(e.server)}** · ${e.summary} · for ${forWhom(e)}`);
+    return reply(`🔑 **Key log** (${log.length}, oldest first)\n${lines.join('\n')}\n\`${prefix}keys <number>\` shows one in full.`);
   },
 };

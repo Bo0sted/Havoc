@@ -239,7 +239,7 @@ export function openDb(path) {
     keyPins: q('SELECT user_id, kind, key FROM key_pins WHERE server = ? ORDER BY rowid'),
     setKeyPin: q('INSERT INTO key_pins (server, user_id, kind, key) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET key = excluded.key'),
     logKey: q('INSERT INTO key_log (server, at, summary, details) VALUES (?, ?, ?, ?)'),
-    keyLog: q('SELECT at, summary, details FROM key_log WHERE server = ? ORDER BY id'),
+    keyLog: q('SELECT id, server, at, summary, details FROM key_log ORDER BY id'),
   };
 
   // Runs fn inside one transaction: everything in it lands, or nothing does
@@ -581,8 +581,8 @@ export function openDb(path) {
       // `details` is a list of [label, value] lines.
       log: (summary, details) => s.logKey.run(server, Date.now(), summary, JSON.stringify(details)),
     }),
-    // The key log, oldest first, as { at, summary, details }.
-    keyLog: (server) => s.keyLog.all(server).map((r) => ({ ...r, details: JSON.parse(r.details) })),
+    // Every server's key log, oldest first, as { id, server, at, summary, details }.
+    keyLog: () => s.keyLog.all().map((r) => ({ ...r, details: JSON.parse(r.details) })),
 
     close: () => db.close(),
   };
