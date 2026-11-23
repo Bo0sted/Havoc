@@ -236,6 +236,7 @@ export function openDb(path) {
     encryptionKeys: q('SELECT ecdh, signing FROM encryption_keys WHERE server = ?'),
     setEncryptionKeys: q('INSERT INTO encryption_keys (server, ecdh, signing) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET ecdh = excluded.ecdh, signing = excluded.signing'),
     keyPin: q('SELECT key FROM key_pins WHERE server = ? AND user_id = ? AND kind = ?'),
+    keyPins: q('SELECT user_id, kind, key FROM key_pins WHERE server = ? ORDER BY rowid'),
     setKeyPin: q('INSERT INTO key_pins (server, user_id, kind, key) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET key = excluded.key'),
     logKey: q('INSERT INTO key_log (server, at, summary, details) VALUES (?, ?, ?, ?)'),
     keyLog: q('SELECT at, summary, details FROM key_log WHERE server = ? ORDER BY id'),
@@ -569,6 +570,14 @@ export function openDb(path) {
       save: ({ ecdh, signing }) => s.setEncryptionKeys.run(server, JSON.stringify(ecdh), JSON.stringify(signing)),
       pin: (userId, kind) => s.keyPin.get(server, userId, kind)?.key ?? null,
       setPin: (userId, kind, key) => s.setKeyPin.run(server, userId, kind, key),
+      // Once per server: every key pinned so far (from when first-seen keys
+      // weren't logged yet); empty every time after that.
+      unloggedPins: () => atomic(() => {
+        const name = `key-log-pins:${server}`;
+        if (s.migrated.get(name)) return [];
+        s.migrate.run(name);
+        return s.keyPins.all(server);
+      }),
       // `details` is a list of [label, value] lines.
       log: (summary, details) => s.logKey.run(server, Date.now(), summary, JSON.stringify(details)),
     }),

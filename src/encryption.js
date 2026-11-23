@@ -46,6 +46,8 @@ const sameKey = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y;
 // of that, in groups of four.
 const pinOf = (jwk) => `${jwk.x}.${jwk.y}`;
 const fingerprint = (pin) => `\`${createHash('sha256').update(pin).digest('hex').match(/.{4}/g).join(' ')}\``;
+// Who Havoc's own keys are for: anyone can encrypt to Havoc with them.
+const EVERYONE = 'everyone on this server';
 // Signed values, length-prefixed so no combination reads as another.
 const framed = (parts) => enc.encode(parts.map((p) => `${String(p).length}:${p}`).join('|'));
 
@@ -113,6 +115,7 @@ export class Encryption {
         saved = { ecdh: await subtle.exportKey('jwk', ecdh.privateKey), signing: await subtle.exportKey('jwk', signing.privateKey) };
         this.store.save(saved);
         this.store.log('Havoc made its own encryption and signing keys', [
+          ['For', EVERYONE],
           ['Why', 'first start on this server (or its keys were lost from havoc.db)'],
           ['Encryption key', fingerprint(pinOf(saved.ecdh))],
           ['Signing key', fingerprint(pinOf(saved.signing))],
@@ -130,12 +133,18 @@ export class Encryption {
   // others (or none), join any groups it was invited to, and re-check the
   // groups it knows, since events may have been missed while away.
   async start() {
+    // Keys pinned before the log listed first-seen keys go in it once, by
+    // name, so it holds every key Havoc has accepted. Taken first, so a key
+    // pinned meanwhile isn't logged twice.
+    const old = this.store.unloggedPins();
+    if (old.length) this.logOldPins(old).catch((err) => this.client.emit('warn', `key log: ${err.message}`));
     const { ecdh, signing } = await this.keys();
     const r = await this.client.request('get-encrypted-key', undefined, { 'encrypted-key-result': null });
     if (!r) throw new Error("the server didn't say which keys it has");
     // A key the server had for Havoc that isn't Havoc's (made by a browser
     // signed in to its account, or before havoc.db lost its keys) is replaced.
     const replaced = (kind, old, now) => old && this.store.log(`Havoc published its ${kind} key, replacing a different one the server had`, [
+      ['For', EVERYONE],
       ['Old key', fingerprint(pinOf(old))],
       ['New key', fingerprint(pinOf(now))],
     ]);
@@ -152,6 +161,12 @@ export class Encryption {
     }
     for (const group of this.groups.values()) group.ready = false;
     this.client.socket.emit('get-group-invites');
+  }
+
+  async logOldPins(pins) {
+    if (!this.client.channelsLoaded) await new Promise((r) => this.client.once('channels', r));
+    const names = await this.client.namesOf([...new Set(pins.map((p) => p.user_id))]);
+    for (const p of pins) this.logAccepted(p.user_id, p.kind, names.get(p.user_id), p.key);
   }
 
   // Group events. Havoc joins every group it's invited to; a membership
@@ -190,19 +205,21 @@ export class Encryption {
 
   // A key the server gave for someone ('encryption' or 'signing'). The first
   // one is pinned; a different one later (they reset their keys, or someone
-  // swapped it) is accepted, pinned and logged.
+  // swapped it) is accepted and pinned instead. Both are logged.
   noteKey(userId, kind, jwk, name) {
     if (!jwk?.x || !jwk?.y || userId === this.client.user.id) return;
     const pin = pinOf(jwk);
     const pinned = this.store.pin(userId, kind);
     if (pinned === pin) return;
     this.store.setPin(userId, kind, pin);
-    if (!pinned) return;
-    const who = name ?? this.client.members.get(userId)?.name ?? `user ${userId}`;
-    this.store.log(`${who}'s ${kind} key changed (accepted)`, [
-      ['Who', `${who} (id ${userId})`],
-      ['Old key', fingerprint(pinned)],
-      ['New key', fingerprint(pin)],
+    this.logAccepted(userId, kind, name ?? this.client.members.get(userId)?.name, pin, pinned);
+  }
+
+  logAccepted(userId, kind, name, pin, old = null) {
+    const who = name ?? `user ${userId}`;
+    this.store.log(old ? `${who}'s ${kind} key changed (accepted)` : `Havoc accepted ${who}'s ${kind} key (first seen)`, [
+      ['For', `${who} (id ${userId})`],
+      ...(old ? [['Old key', fingerprint(old)], ['New key', fingerprint(pin)]] : [['Key', fingerprint(pin)]]),
     ]);
   }
 
@@ -413,10 +430,10 @@ export class Encryption {
     if (r?.event === 'group-epoch-published') {
       const why = !roster.epoch ? 'a new group' : group.needsRotation ? 'its members changed' : "Havoc couldn't open the group's current key";
       this.store.log(`Havoc made a new key for the group DM "${roster.name}"`, [
+        ['For', roster.members.map((m) => m.username).join(', ')],
         ['Group', `${roster.name} (code ${code})`],
         ['Key number', epoch],
         ['Why', why],
-        ['Members', roster.members.map((m) => m.username).join(', ')],
       ]);
       group.keys.set(epoch, key);
       group.epoch = epoch;
