@@ -3,3 +3,4 @@ node_modules/
 out/
 havoc.db
 havoc.db-*
+backups/backups/

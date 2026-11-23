@@ -83,3 +83,14 @@ Logs: `journalctl -u havoc -f`. Update: `git pull && sudo systemctl restart havo
 
 Oracle may reclaim Always Free VMs that sit mostly idle for a week; upgrading
 the account to Pay As You Go (still free within the limits) stops that.
+
+## Daily backups to Backblaze
+
+Run `backups/manager.sh` as the user Havoc runs as (not root). The first time,
+it walks you through connecting a Backblaze B2 bucket, the encryption password,
+and the backup time and retention. After that it shows how backups are going
+and lets you run one now, enable or disable the daily backup, look at and
+download backups, and change the time or retention.
+
+It backs up `.env` and `havoc.db` with restic, encrypted. A report for each day
+goes in `backups/backups/` as `SUCCESS__<date>.txt` or `FAILED__<date>.txt`.
