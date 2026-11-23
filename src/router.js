@@ -1,6 +1,8 @@
 // Turns a chat message into a command run. In order:
-//   1. unknown commands, and admin commands from non-admins, are ignored silently
+//   1. unknown commands, admin commands from non-admins, and in DMs anything
+//      not made for DMs (`dm: true`) are ignored silently
 //   2. once a server has bot channels, non-admins are ignored everywhere else
+//      (DMs aside)
 //   3. ?remote: an admin's commands use another server's data (replies stay here)
 //   4. economy commands refuse guests once, then ignore them for 12 hours,
 //      and refuse anyone in ?wheel jail (except jailFree ones like ?stats)
@@ -18,7 +20,7 @@ const GUEST_BLOCK = 12 * 3_600_000;
 const GUEST_REPLY = 'Guest accounts are unable to use economy commands';
 const FAILED_REPLY = 'Something went wrong (and not the fun kind of explosion).';
 
-export function createRouter({ prefix, commands, servers, db, cooldowns }) {
+export function createRouter({ prefix, commands, servers, db, cooldowns, reminders }) {
   const byName = new Map();
   for (const cmd of commands) for (const n of [cmd.name, ...(cmd.aliases ?? [])]) byName.set(n, cmd);
 
@@ -31,19 +33,21 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
   const waiting = new Map();
   const answerKey = (home, channelCode, threadId, userId) => `${home.key}\n${channelCode}\n${threadId ?? ''}\n${userId}`;
 
-  async function handle(home, { channelCode, message, threadId }) {
+  // `dm` is the DM or group DM it came from, or undefined in a server channel.
+  async function handle(home, { channelCode, message, threadId, dm }) {
     const text = (message.content || '').trim();
     if (waiting.get(answerKey(home, channelCode, threadId, message.user_id))?.(text)) return;
     if (!text.toLowerCase().startsWith(prefix.toLowerCase())) return;
     const [word, ...args] = text.slice(prefix.length).trim().split(/\s+/);
     const cmd = byName.get((word || '').toLowerCase());
     if (!cmd) return;
+    if (dm && !cmd.dm) return;
 
     const userId = message.user_id;
     const isAdmin = home.admins.has(userId);
     if (cmd.admin && !isAdmin) return;
     const channel = home.client.channel(channelCode);
-    if (!isAdmin && !inBotChannel(home, channel)) return;
+    if (!isAdmin && !dm && !inBotChannel(home, channel)) return;
 
     const server = (isAdmin && cmd.name !== 'remote' && remotes.get(remoteKey(home, userId))) || home;
     const remote = server !== home;
@@ -63,7 +67,7 @@ export function createRouter({ prefix, commands, servers, db, cooldowns }) {
       if (busy) return await out.reply(`⏳ Everyone wants \`${prefix}${cmd.name}\` right now! It's free again in ${formatWait(busy)}.`);
       const track = tracker(db, server.key, userId);
       await cmd.run({
-        cmd, prefix, args, message, channel, isAdmin, remote, home, server, db, cooldowns, commands, servers, track,
+        cmd, prefix, args, message, channel, threadId, dm: dm ?? null, isAdmin, remote, home, server, db, cooldowns, commands, servers, track, reminders,
         // The person running it, or null while remote: their id on this
         // server means someone else (or no one) on the other one.
         user: remote ? null : { id: userId, name: message.username, avatar: message.avatar },

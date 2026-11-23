@@ -3,6 +3,7 @@
 // that joins every channel the account can read.
 import { EventEmitter } from 'node:events';
 import { io } from 'socket.io-client';
+import { Encryption } from './encryption.js';
 
 const EULA_VERSION = '2.0';
 // Haven drops an ordinary account's messages past 10 per 10 seconds, so
@@ -19,7 +20,8 @@ const UPLOAD_REUSE = 24 * 3_600_000;
 const refusal = (reason) => Object.assign(new Error(reason), { reason });
 
 export class HavenClient extends EventEmitter {
-  constructor({ url, username, password }) {
+  // `keyStore` is this server's encryption storage (db.keyStore).
+  constructor({ url, username, password }, keyStore) {
     super();
     this.url = url.replace(/\/+$/, '');
     this.username = username;
@@ -31,10 +33,20 @@ export class HavenClient extends EventEmitter {
     // from messages and member lists. isGuest is only known once the person
     // has been seen in a member list (messages don't carry it).
     this.members = new Map();
-    // Server channels Havoc answers in (no DMs), code → { id, name }, and
-    // which of them are forums.
+    // Server channels, code → { code, id, name }, and which of them are
+    // forums; true once the list has arrived since connecting.
     this.serverChannels = new Map();
     this.forumChannels = new Set();
+    this.channelsLoaded = false;
+    // DMs and group DMs (not the DM with itself), code → { code, id, group,
+    // partner }, where partner is the other person's id in a 1:1 DM.
+    this.dmChannels = new Map();
+    this.encryption = new Encryption(this, keyStore);
+    // DM text is encrypted one message at a time, so it goes out in order.
+    this.sealing = Promise.resolve();
+    // Every message waiting for its echo listens for it (sendForEdit), and a
+    // burst of reminders can be many at once; each stops listening when done.
+    this.setMaxListeners(0);
     // Images posted with sendImageOnce: key → { url, at }.
     this.uploaded = new Map();
     // Posts waiting to go out, and when the recent ones went.
@@ -75,8 +87,10 @@ export class HavenClient extends EventEmitter {
       // Listing channels also joins their live rooms, so new messages
       // from all of them arrive on this socket.
       this.socket.emit('get-channels');
+      this.encryption.start().catch((err) => this.emit('warn', `encryption: ${err.message}`));
       this.emit('ready', this.user);
     });
+    this.encryption.listen(this.socket);
 
     this.socket.on('connect_error', async (err) => {
       // The token expired or the password changed: sign in again and let
@@ -92,17 +106,31 @@ export class HavenClient extends EventEmitter {
       this.emit('warn', `connect error: ${err.message}`);
     });
 
-    this.socket.on('disconnect', (reason) => this.emit('warn', `disconnected: ${reason}`));
+    this.socket.on('disconnect', (reason) => {
+      this.channelsLoaded = false;
+      this.emit('warn', `disconnected: ${reason}`);
+    });
     this.socket.on('error-msg', (msg) => this.emit('warn', `server: ${msg}`));
 
     // A channel created or joined later shows up as a fresh list; asking
     // again joins its room too.
     this.socket.on('channels-list', (channels) => {
       const server = (channels || []).filter((c) => !c.is_dm && !c.is_group && !c.is_self_dm);
-      this.serverChannels = new Map(server.map((c) => [c.code, { id: c.id, name: c.name }]));
+      this.serverChannels = new Map(server.map((c) => [c.code, { code: c.code, id: c.id, name: c.name }]));
       this.forumChannels = new Set(server.filter((c) => c.is_forum).map((c) => c.code));
+      this.dmChannels = new Map();
+      for (const c of channels || []) if (c.is_dm) this.addDm(c);
+      this.channelsLoaded = true;
       this.emit('channels', channels);
     });
+    // A DM someone just started with Havoc (or Havoc with them), and a
+    // group it just joined. Their first message can follow at once.
+    this.socket.on('dm-opened', (c) => this.addDm(c));
+    this.socket.on('group-dm-opened', (c) => {
+      this.addDm({ ...c, is_group: 1 });
+      this.socket.emit('get-channels');
+    });
+    this.socket.on('reactions-updated', (e) => this.emit('reactions', e));
 
     // Who is online in a channel. Haven leaves isGuest out when it is false.
     this.socket.on('online-users', ({ channelCode, users }) => {
@@ -148,25 +176,60 @@ export class HavenClient extends EventEmitter {
     });
   }
 
-  incoming(channelCode, message, threadId) {
+  seal(dm, text) {
+    const sealed = this.sealing.then(() => this.encryption.seal(dm, text));
+    this.sealing = sealed.catch(() => {});
+    return sealed;
+  }
+
+  addDm(c) {
+    if (!c?.code || c.is_self_dm) return;
+    const partner = c.is_group ? null : c.dm_target?.id;
+    if (!c.is_group && !partner) return;
+    this.dmChannels.set(c.code, { code: c.code, id: c.id, group: !!c.is_group, partner });
+  }
+
+  // DM messages arrive encrypted and are opened first; one that can't be
+  // read (or, in a group, isn't properly signed) is dropped. `dm` is the
+  // DM it came from, or undefined in a server channel.
+  async incoming(channelCode, message, threadId) {
     this.remember(message.user_id, message.username, message.avatar);
+    const dm = this.dmChannels.get(channelCode);
+    if (dm) {
+      const content = await this.encryption.open(dm, message).catch((err) => {
+        this.emit('warn', `couldn't open a message in DM ${channelCode}: ${err.message}`);
+        return null;
+      });
+      if (content === null) return;
+      message = { ...message, content };
+    }
     // Havoc's own messages are only watched for their ids (see sendForEdit).
     if (message.user_id === this.user.id) return this.emit('own-message', { channelCode, message });
     if (message.is_webhook) return;
-    // Only server channels: DMs and group DMs are ignored. A channel not
-    // in the list yet might be a new DM, so it is skipped and the list
-    // refreshed rather than guessed at.
-    if (!this.serverChannels.has(channelCode)) {
+    // A channel not in the list yet is skipped and the list refreshed
+    // rather than guessed at.
+    if (!dm && !this.serverChannels.has(channelCode)) {
       this.socket.emit('get-channels');
       return;
     }
-    this.emit('message', { channelCode, message, threadId });
+    this.emit('message', { channelCode, message, threadId, dm });
   }
 
   // Posts in the channel, or inside a topic/thread when threadId is set.
-  // Silent unless `silent: false` (a ping that should notify).
-  // Resolves once it has gone out (it may wait its turn, see SEND_MAX).
-  post(channelCode, fields, { replyTo, threadId, silent = true } = {}) {
+  // Silent unless `silent: false` (a ping that should notify). In a DM the
+  // text is encrypted first; if it can't be, it isn't sent.
+  // Resolves true once it has gone out (it may wait its turn, see
+  // SEND_MAX), or false when it wasn't sent.
+  async post(channelCode, fields, { replyTo, threadId, silent = true } = {}) {
+    const dm = this.dmChannels.get(channelCode);
+    if (dm) {
+      try {
+        fields = { ...fields, ...(await this.seal(dm, fields.content)) };
+      } catch (err) {
+        this.emit('warn', `couldn't encrypt a message for DM ${channelCode}, so it wasn't sent: ${err.message}`);
+        return false;
+      }
+    }
     return new Promise((resolve) => {
       this.outbox.push(() => {
         if (threadId) {
@@ -174,7 +237,7 @@ export class HavenClient extends EventEmitter {
         } else {
           this.socket.emit('send-message', { code: channelCode, silent, ...fields, ...(replyTo && { replyTo }) });
         }
-        resolve();
+        resolve(true);
       });
       this.flush();
     });
@@ -198,6 +261,7 @@ export class HavenClient extends EventEmitter {
 
   // Sends a message and resolves with its id once Haven echoes it back
   // (null if it doesn't within a few seconds), so it can be edited later.
+  // False when it wasn't sent at all (a DM that couldn't be encrypted).
   sendForEdit(channelCode, content, opts) {
     return new Promise((resolve) => {
       let timer;
@@ -209,13 +273,25 @@ export class HavenClient extends EventEmitter {
       };
       this.on('own-message', onOwn);
       // The wait starts once it has actually gone out, not while it's queued.
-      this.send(channelCode, content, opts).then(() => { timer = setTimeout(() => done(null), 5000); });
+      this.send(channelCode, content, opts).then((sent) => {
+        if (!sent) return done(false);
+        timer = setTimeout(() => done(null), 5000);
+      });
     });
   }
 
   // Edits one of Havoc's messages. Resolves true once Haven confirms it,
   // false if it doesn't (e.g. the server took away editing own messages).
-  edit(channelCode, messageId, content) {
+  async edit(channelCode, messageId, content) {
+    const dm = this.dmChannels.get(channelCode);
+    if (dm) {
+      try {
+        ({ content } = await this.seal(dm, content));
+      } catch (err) {
+        this.emit('warn', `couldn't encrypt an edit for DM ${channelCode}: ${err.message}`);
+        return false;
+      }
+    }
     return new Promise((resolve) => {
       const done = (ok) => { clearTimeout(timer); this.off('edited', onEdited); resolve(ok); };
       const onEdited = (id) => { if (id === messageId) done(true); };
@@ -254,6 +330,17 @@ export class HavenClient extends EventEmitter {
     });
   }
 
+  react(messageId, emoji) {
+    this.socket?.emit('add-reaction', { messageId, emoji });
+  }
+
+  // The 1:1 DM with someone, started if there isn't one yet: its code, or
+  // null if Haven won't open it.
+  async openDm(userId) {
+    const r = await this.request('start-dm', { targetUserId: userId }, { 'dm-opened': (c) => c?.dm_target?.id === userId });
+    return r && this.dmChannels.has(r.data.code) ? r.data.code : null;
+  }
+
   // avatar: undefined = not known yet, null = has none.
   remember(id, name, avatar, isGuest) {
     if (id == null || !name) return;
@@ -276,6 +363,25 @@ export class HavenClient extends EventEmitter {
     });
   }
 
+  // Emits `event` and resolves with the first answer among `replies` (event
+  // name → check, or null to take any) as { event, data }, or null if none
+  // comes within `ms`.
+  request(event, data, replies, ms = 5000) {
+    if (!this.socket?.connected) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const handlers = Object.entries(replies).map(([name, check]) => [name, (d) => { if (!check || check(d)) done({ event: name, data: d }); }]);
+      const done = (r) => {
+        clearTimeout(timer);
+        for (const [name, handler] of handlers) this.socket.off(name, handler);
+        resolve(r);
+      };
+      const timer = setTimeout(() => done(null), ms);
+      for (const [name, handler] of handlers) this.socket.on(name, handler);
+      if (data === undefined) this.socket.emit(event);
+      else this.socket.emit(event, data);
+    });
+  }
+
   anyChannel() {
     return this.serverChannels.keys().next().value;
   }
@@ -288,6 +394,11 @@ export class HavenClient extends EventEmitter {
 
   channelById(id) {
     for (const c of this.serverChannels.values()) if (c.id === id) return c;
+    return null;
+  }
+
+  dmById(id) {
+    for (const dm of this.dmChannels.values()) if (dm.id === id) return dm;
     return null;
   }
 

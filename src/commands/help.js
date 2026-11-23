@@ -18,10 +18,12 @@ export default {
   category: 'utility',
   description: 'this list',
   cooldown: 5_000,
-  async run({ prefix, isAdmin, commands, reply }) {
+  dm: true,
+  // In a DM, only the commands that work there.
+  async run({ prefix, isAdmin, dm, commands, reply }) {
     const sections = SECTIONS
       .filter(([id]) => id !== 'admin' || isAdmin)
-      .map(([id, title]) => [title, commands.filter((c) => (c.admin ? 'admin' : c.category) === id)])
+      .map(([id, title]) => [title, commands.filter((c) => (c.admin ? 'admin' : c.category) === id && (!dm || c.dm))])
       .filter(([, list]) => list.length)
       .map(([title, list]) => `**${title}**\n${list.map((c) => line(prefix, c)).join('\n')}`);
     return reply(`**Havoc commands**\n\n${sections.join('\n\n')}`);

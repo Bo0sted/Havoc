@@ -100,6 +100,28 @@ const SCHEMA = `
     since INTEGER NOT NULL, free_used INTEGER NOT NULL, paid INTEGER NOT NULL,
     PRIMARY KEY (server, user_id)
   );
+  CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server TEXT NOT NULL, user_id INTEGER NOT NULL,
+    place TEXT NOT NULL, channel_id INTEGER NOT NULL, thread_id INTEGER,
+    text TEXT NOT NULL, created INTEGER NOT NULL, due INTEGER NOT NULL,
+    snoozes INTEGER NOT NULL DEFAULT 0,
+    sent_at INTEGER, sent_code TEXT, sent_id INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS reminders_owner ON reminders (server, user_id);
+  CREATE INDEX IF NOT EXISTS reminders_due ON reminders (due) WHERE sent_at IS NULL;
+  CREATE TABLE IF NOT EXISTS encryption_keys (
+    server TEXT NOT NULL PRIMARY KEY, ecdh TEXT NOT NULL, signing TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS key_pins (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL,
+    PRIMARY KEY (server, user_id, kind)
+  );
+  CREATE TABLE IF NOT EXISTS key_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server TEXT NOT NULL, at INTEGER NOT NULL, summary TEXT NOT NULL, details TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS key_log_server ON key_log (server);
 `;
 
 // Columns added to a table after it first shipped: [table, column, definition].
@@ -200,6 +222,23 @@ export function openDb(path) {
     everyItem: q('SELECT server, user_id, item, qty FROM items WHERE qty > 0 UNION ALL SELECT server, user_id, item, qty FROM safe_items WHERE qty > 0'),
     setCommandCount: q(`INSERT INTO command_counts (server, user_id, total, day, today) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT DO UPDATE SET total = excluded.total, day = excluded.day, today = excluded.today`),
+    reminders: q('SELECT * FROM reminders WHERE server = ? AND user_id = ? AND sent_at IS NULL ORDER BY due, id'),
+    countReminders: q('SELECT COUNT(*) AS n FROM reminders WHERE server = ? AND user_id = ? AND sent_at IS NULL'),
+    addReminder: q('INSERT INTO reminders (server, user_id, place, channel_id, thread_id, text, created, due) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+    dueReminders: q('SELECT * FROM reminders WHERE sent_at IS NULL AND due <= ? ORDER BY due, id'),
+    nextReminder: q('SELECT MIN(due) AS due FROM reminders WHERE sent_at IS NULL AND due > ?'),
+    deleteReminder: q('DELETE FROM reminders WHERE id = ?'),
+    reminderSent: q('UPDATE reminders SET sent_at = ?, sent_code = ?, sent_id = ? WHERE id = ? AND sent_at IS NULL'),
+    latestSentReminder: q('SELECT * FROM reminders WHERE server = ? AND user_id = ? AND sent_at >= ? ORDER BY sent_at DESC, id DESC LIMIT 1'),
+    reminderBySent: q('SELECT * FROM reminders WHERE server = ? AND sent_id = ? AND sent_at IS NOT NULL'),
+    snoozeReminder: q('UPDATE reminders SET due = ?, snoozes = snoozes + 1, sent_at = NULL, sent_code = NULL, sent_id = NULL WHERE id = ? AND sent_at IS NOT NULL'),
+    purgeReminders: q('DELETE FROM reminders WHERE sent_at IS NOT NULL AND sent_at < ?'),
+    encryptionKeys: q('SELECT ecdh, signing FROM encryption_keys WHERE server = ?'),
+    setEncryptionKeys: q('INSERT INTO encryption_keys (server, ecdh, signing) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET ecdh = excluded.ecdh, signing = excluded.signing'),
+    keyPin: q('SELECT key FROM key_pins WHERE server = ? AND user_id = ? AND kind = ?'),
+    setKeyPin: q('INSERT INTO key_pins (server, user_id, kind, key) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET key = excluded.key'),
+    logKey: q('INSERT INTO key_log (server, at, summary, details) VALUES (?, ?, ?, ?)'),
+    keyLog: q('SELECT at, summary, details FROM key_log WHERE server = ? ORDER BY id'),
   };
 
   // Runs fn inside one transaction: everything in it lands, or nothing does
@@ -497,6 +536,44 @@ export function openDb(path) {
       if (change > 0) s.addCents.run(server, userId, change);
       return { cash, taken, change, forgiven: Math.max(0, owed) };
     }),
+
+    // Reminders waiting to go off, soonest first. Once one goes off it's
+    // marked sent (with where its message is) and kept a while for snoozing.
+    reminders: (server, userId) => s.reminders.all(server, userId),
+    // { place, channelId, threadId, text, created, due }. False, and nothing
+    // added, when they already have `max` waiting.
+    addReminder: (server, userId, r, max) => atomic(() => {
+      if (s.countReminders.get(server, userId).n >= max) return false;
+      s.addReminder.run(server, userId, r.place, r.channelId, r.threadId ?? null, r.text, r.created, r.due);
+      return true;
+    }),
+    // Every server's reminders due by `now`, and when the next one after that is (or null).
+    dueReminders: (now) => s.dueReminders.all(now),
+    nextReminder: (now) => s.nextReminder.get(now).due,
+    deleteReminder: (id) => s.deleteReminder.run(id),
+    reminderSent: (id, at, code, messageId) => s.reminderSent.run(at, code, messageId, id),
+    latestSentReminder: (server, userId, since) => s.latestSentReminder.get(server, userId, since) ?? null,
+    reminderBySent: (server, messageId) => s.reminderBySent.get(server, messageId) ?? null,
+    // Back to waiting until `due`. False if it was already snoozed (or gone).
+    snoozeReminder: (id, due) => s.snoozeReminder.run(due, id).changes > 0,
+    purgeReminders: (before) => s.purgeReminders.run(before),
+
+    // One server's encryption storage (see Encryption): Havoc's own keys as
+    // private JWKs ({ ecdh, signing } or null), the key pinned for each
+    // person ('encryption' or 'signing', as "x.y"), and the key log.
+    keyStore: (server) => ({
+      load: () => {
+        const row = s.encryptionKeys.get(server);
+        return row ? { ecdh: JSON.parse(row.ecdh), signing: JSON.parse(row.signing) } : null;
+      },
+      save: ({ ecdh, signing }) => s.setEncryptionKeys.run(server, JSON.stringify(ecdh), JSON.stringify(signing)),
+      pin: (userId, kind) => s.keyPin.get(server, userId, kind)?.key ?? null,
+      setPin: (userId, kind, key) => s.setKeyPin.run(server, userId, kind, key),
+      // `details` is a list of [label, value] lines.
+      log: (summary, details) => s.logKey.run(server, Date.now(), summary, JSON.stringify(details)),
+    }),
+    // The key log, oldest first, as { at, summary, details }.
+    keyLog: (server) => s.keyLog.all(server).map((r) => ({ ...r, details: JSON.parse(r.details) })),
 
     close: () => db.close(),
   };

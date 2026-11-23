@@ -35,5 +35,8 @@ import deleteCommand from './delete.js';
 import wheel from './wheel.js';
 import charm from './charm.js';
 import value from './value.js';
+import remind from './remind.js';
+import snooze from './snooze.js';
+import keys from './keys.js';
 
-export default [help, cat, dog, fox, duck, funfact, dadjoke, advice, pokemon, fish, mine, hunt, daily, wheel, lottery, hangman, money, charm, value, sell, safe, give, shop, top, gdp, bet, blowup, id, cooldown, botchannel, energy, remote, pfp, status, consoleCommand, deleteCommand];
+export default [help, cat, dog, fox, duck, funfact, dadjoke, advice, pokemon, fish, mine, hunt, daily, wheel, lottery, hangman, money, charm, value, sell, safe, give, shop, top, gdp, bet, blowup, id, remind, snooze, cooldown, botchannel, energy, remote, pfp, status, consoleCommand, deleteCommand, keys];
