@@ -1,13 +1,13 @@
-// Energy for physical actions (?fish costs 1, ?mine 4, ?hunt 1 or 2): a bar of `max`
+// Energy for physical actions (?fish costs 1, ?mine 2, ?hunt 2 or 3): a bar of `max`
 // points that refills by one every `every` ms. Stored as the points someone
 // had at `since`; what they have now is worked out from the time passed, so
 // nothing has to tick. Admins are limited too.
 export const DEFAULTS = { max: 60, every: 60_000 };
 
 // Recovery items, sold in ?shop and used up on the spot, one per
-// BOOST_COOLDOWN. A point of energy catches ~$212 on average (fish and mine
-// alike), so each costs about $190-260 more than the catches it buys (at the
-// default bar of 60): they never pay, with room for a lucky legendary.
+// BOOST_COOLDOWN. At ~$215-225 an energy they cost about what fishing
+// catches with it (~$216) and less than the other jobs (~$247-356, more with
+// crew), so they pay for hunters and crews; the cooldown keeps that small.
 // Check these again if catch odds or item prices change. Ids are stored
 // (as the time of the last one), so never rename one.
 export const BOOST_COOLDOWN = 3_600_000;

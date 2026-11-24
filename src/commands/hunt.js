@@ -6,27 +6,28 @@ import { pick, backpackFull, foundLine, charmedCatch, charmedCost } from '../gat
 import { drawCharm, kickedIn } from '../charms.js';
 import { hospitalize, billLine } from '../hospital.js';
 import { placeOf } from '../storage.js';
+import { partyFor, crewTrip } from '../crew.js';
 
-// High risk, high reward: a Hunting License, a gun and 1 round per hunt.
-// Small game (any gun, 1 energy) pays a bit more than fishing with little
-// risk; big game (a shotgun or better, 2 energy) pays about twice as much
-// per energy but lands you in the hospital far more often. Misses are rare
-// (5%, any gun). The gun only changes that hospital chance (what it saves
-// goes to common game), so a better gun is safer, not richer.
-// For someone worth ~$50k, small game is ~$239 an energy and big game ~$466
-// to ~$487 (fishing ~$212); big game stops paying at ~$190k worth with the
-// shotgun, ~$270k with the rifle and ~$355k with the Barrett.
+// The riskiest jobs, and the best paid: a Hunting License, a gun and 1
+// round per hunt (hunting guides bring their own). Small game (any gun, 2
+// energy) is ~$521 a hunt, a bit more per energy than mining, with a 2%
+// risk of the hospital; big game (a shotgun or better, 3 energy) is ~$1,068
+// a hunt, more again, and riskier still. Misses are rare (5%, any gun). The
+// gun only changes big game's hospital chance (what it saves goes to common
+// game), so a better gun is safer, not richer. Bills grow with what you're
+// worth (hospital.js), so past ~$100k hunting alone stops paying well:
+// guides share the risk (crew.js).
 const MODES = {
   small: {
-    energy: 1,
+    energy: 2,
     game: 'small game',
     from: 'hunt_small',
     tiers: () => [
       { tier: 'hospital', weight: 2 },
       { tier: 'nothing', weight: 5 },
-      { tier: 'common', weight: 61 },
-      { tier: 'rare', weight: 25 },
-      { tier: 'epic', weight: 7 },
+      { tier: 'common', weight: 46 },
+      { tier: 'rare', weight: 32 },
+      { tier: 'epic', weight: 15 },
     ],
     misses: [
       'You missed. The squirrel laughed at you.',
@@ -41,7 +42,7 @@ const MODES = {
     ],
   },
   big: {
-    energy: 2,
+    energy: 3,
     game: 'big game',
     from: 'hunt_big',
     tiers: (gun) => [
@@ -76,7 +77,7 @@ export default {
   name: 'hunt',
   category: 'economy',
   usage: ['small', 'big'],
-  description: 'go hunting (needs a Hunting License, a gun and ammo from the shop): small game takes any gun and 1 energy, big game a shotgun or better and 2 energy, with a real risk of the hospital',
+  description: 'go hunting (needs a Hunting License, a gun and ammo from the shop): small game takes any gun and 2 energy, big game a shotgun or better and 3 energy, with the biggest risk of the hospital',
   // Per mode, for ?energy.
   energies: { small: MODES.small.energy, big: MODES.big.energy },
   cooldown: 5_000,
@@ -84,7 +85,7 @@ export default {
   cooldownText: (wait) => `🔫 You're still reloading. Try again in ${wait}.`,
   async run({ prefix, args, user, server, db, track, reply, notHere }) {
     const mode = MODES[matchAnswer(args.join(' '), Object.keys(MODES))];
-    if (!mode) return reply(`Usage: \`${prefix}hunt small\` (any gun, 1 energy) or \`${prefix}hunt big\` (a shotgun or better, 2 energy)`);
+    if (!mode) return reply(`Usage: \`${prefix}hunt small\` (any gun, 2 energy) or \`${prefix}hunt big\` (a shotgun or better, 3 energy)`);
     if (!user) return notHere();
 
     const licenses = db.licenses(server.key, user.id);
@@ -113,17 +114,23 @@ export default {
     db.useAmmo(server.key, user.id, ammo.id);
     const charmed = charm ? `${kickedIn(charm)}\n` : '';
 
-    const found = charmedCatch(charm, mode.tiers(gun), mode.from);
-    if (!found.length) return reply(`${charmed}🔫 ${pick(mode.misses)}`);
-    if (found[0].tier === 'hospital') {
+    const party = partyFor(db, server.key, user.id, mode.from, mode.tiers(gun));
+    const found = charmedCatch(charm, party.yours, mode.from);
+    let lines;
+    if (!found.length) {
+      lines = [`🔫 ${pick(mode.misses)}`];
+    } else if (found[0].tier === 'hospital') {
       const bill = hospitalize(db, server.key, user.id);
       track.lost('hunting', bill.bill - bill.forgiven);
-      return reply(`${charmed}🏥 ${pick(mode.hurt)} ${billLine(bill)}`);
+      lines = [`🏥 ${pick(mode.hurt)} ${billLine(bill)}`];
+    } else {
+      for (const item of found) {
+        db.addItem(server.key, user.id, item.id);
+        track.earned('hunting', item.price);
+      }
+      lines = found.map((item) => foundLine('🔫', user.name, 'bagged', item));
     }
-    for (const item of found) {
-      db.addItem(server.key, user.id, item.id);
-      track.earned('hunting', item.price);
-    }
-    return reply(charmed + found.map((item) => foundLine('🔫', user.name, 'bagged', item)).join('\n'));
+    lines.push(...crewTrip(db, server.key, user.id, party, { energy: mode.energy, stream: 'hunting', emoji: '🔫', verb: 'bagged', track }));
+    return reply(charmed + lines.join('\n'));
   },
 };

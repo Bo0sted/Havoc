@@ -7,7 +7,8 @@
 //   4. economy commands refuse guests once, then ignore them for 12 hours,
 //      and refuse anyone in ?wheel jail (except jailFree ones like ?stats)
 //   5. cooldowns (admins skip them), then the API's own limit (nobody skips it)
-//   6. the command runs; anything that goes wrong is logged to the console only
+//   6. payday, if it's due (crew.js), then the command runs; anything that
+//      goes wrong is logged to the console only
 //   7. an economy command that gained or lost money (through `track`) counts
 //      toward milestones (not while remote)
 // A command waiting on an answer (awaitAnswer) sees the person's messages first.
@@ -15,6 +16,7 @@ import { formatWait } from './duration.js';
 import { chunks } from './chunks.js';
 import { countCommand } from './milestones.js';
 import { tracker } from './earnings.js';
+import { payday } from './crew.js';
 
 const GUEST_BLOCK = 12 * 3_600_000;
 const GUEST_REPLY = 'Guest accounts are unable to use economy commands';
@@ -65,6 +67,8 @@ export function createRouter({ prefix, commands, servers, db, cooldowns, reminde
       }
       const busy = cooldowns.takeGlobal(cmd);
       if (busy) return await out.reply(`⏳ Everyone wants \`${prefix}${cmd.name}\` right now! It's free again in ${formatWait(busy)}.`);
+      const paid = cmd.economy && !remote && payday(db, server.key, userId);
+      if (paid) await out.reply(paid);
       const track = tracker(db, server.key, userId);
       await cmd.run({
         cmd, prefix, args, message, channel, threadId, dm: dm ?? null, isAdmin, remote, home, server, db, cooldowns, commands, servers, track, reminders,

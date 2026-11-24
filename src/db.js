@@ -122,6 +122,16 @@ const SCHEMA = `
     server TEXT NOT NULL, at INTEGER NOT NULL, summary TEXT NOT NULL, details TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS key_log_server ON key_log (server);
+  CREATE TABLE IF NOT EXISTS crew (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, job TEXT NOT NULL, name TEXT NOT NULL,
+    hurt_until INTEGER NOT NULL DEFAULT 0, trips INTEGER NOT NULL DEFAULT 0, owed INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS crew_owner ON crew (server, user_id);
+  CREATE TABLE IF NOT EXISTS payroll (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, since INTEGER NOT NULL, energy INTEGER NOT NULL,
+    PRIMARY KEY (server, user_id)
+  );
 `;
 
 // Columns added to a table after it first shipped: [table, column, definition].
@@ -240,6 +250,16 @@ export function openDb(path) {
     setKeyPin: q('INSERT INTO key_pins (server, user_id, kind, key) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET key = excluded.key'),
     logKey: q('INSERT INTO key_log (server, at, summary, details) VALUES (?, ?, ?, ?)'),
     keyLog: q('SELECT id, server, at, summary, details FROM key_log ORDER BY id'),
+    crew: q('SELECT * FROM crew WHERE server = ? AND user_id = ? ORDER BY id'),
+    hire: q('INSERT INTO crew (server, user_id, job, name) VALUES (?, ?, ?, ?)'),
+    fire: q('DELETE FROM crew WHERE id = ?'),
+    renameCrew: q('UPDATE crew SET name = ? WHERE id = ?'),
+    crewWorked: q('UPDATE crew SET owed = owed + ?, trips = trips + 1 WHERE id = ?'),
+    hurtCrew: q('UPDATE crew SET hurt_until = ? WHERE id = ?'),
+    payroll: q('SELECT since, energy FROM payroll WHERE server = ? AND user_id = ?'),
+    addPayroll: q('INSERT INTO payroll (server, user_id, since, energy) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET energy = energy + excluded.energy'),
+    paidCrew: q('UPDATE crew SET owed = 0, trips = 0 WHERE server = ? AND user_id = ?'),
+    dropPayroll: q('DELETE FROM payroll WHERE server = ? AND user_id = ?'),
   };
 
   // Runs fn inside one transaction: everything in it lands, or nothing does
@@ -583,6 +603,35 @@ export function openDb(path) {
     }),
     // Every server's key log, oldest first, as { id, server, at, summary, details }.
     keyLog: () => s.keyLog.all().map((r) => ({ ...r, details: JSON.parse(r.details) })),
+
+    // Someone's crew (crew.js), oldest hire first, as { id, job, name,
+    // hurt_until, trips, owed }: trips worked and wages owed since payday.
+    crew: (server, userId) => s.crew.all(server, userId),
+    // Pays `cost` and hires them. False, and nothing changes, if they can't afford it.
+    hire: (server, userId, job, name, cost) => atomic(() => {
+      if (cost > 0 && s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
+      s.hire.run(server, userId, job, name);
+      return true;
+    }),
+    fire: (id) => s.fire.run(id),
+    renameCrew: (id, name) => s.renameCrew.run(name, id),
+    // One trip: each crewmate in `ids` is owed `wage` more, the one in `hurt`
+    // ({ id, until }, or null) is out until then, and the payroll counts the
+    // trip's `energy` (a payday starts counting at `now`, its first trip).
+    crewWorked: (server, userId, ids, wage, energy, now, hurt) => atomic(() => {
+      for (const id of ids) s.crewWorked.run(wage, id);
+      if (hurt) s.hurtCrew.run(hurt.until, hurt.id);
+      s.addPayroll.run(server, userId, now, energy);
+    }),
+    // The payroll running since the last payday ({ since, energy }), or null.
+    payroll: (server, userId) => s.payroll.get(server, userId) ?? null,
+    // Payday is over: the crew in `quit` leave, and everyone else starts
+    // owing nothing again.
+    settlePayroll: (server, userId, quit) => atomic(() => {
+      for (const id of quit) s.fire.run(id);
+      s.paidCrew.run(server, userId);
+      s.dropPayroll.run(server, userId);
+    }),
 
     close: () => db.close(),
   };

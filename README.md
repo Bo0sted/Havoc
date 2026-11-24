@@ -8,8 +8,9 @@ any number of servers at once and answers messages that start with a prefix
 |---|---|---|
 | `?help` | lists the commands (admins also see the admin ones) | 5sec |
 | `?cat` | a random cat picture | 5sec |
-| `?fish` / `?mine` | go fishing or mining; catches (trash included) go in your Backpack | 5sec |
-| `?hunt small` / `?hunt big` | go hunting with a Hunting License, a gun and ammo; big game risks a hospital bill | 5sec |
+| `?fish` / `?mine` | go fishing or mining; catches (trash included) go in your Backpack, with a small risk of a hospital bill | 5sec |
+| `?hunt small` / `?hunt big` | go hunting with a Hunting License, a gun and ammo; the biggest risk of a hospital bill | 5sec |
+| `?crew` | hire, fire and rename crew who catch alongside you and share your hospital risk; paid once a day | 5sec |
 | `?money` / `?stats [@user]` | money, energy, licenses, tools, Backpack and safe, yours or someone else's | 5sec |
 | `?safe` | move things between your Backpack and your safe, or sell from the safe | 5sec |
 | `?give <user> <amount>` / `?give <user> <item> [amount\|all]` (also `?zelle`) | give someone cash, or items from your Backpack; they get a ping | 5sec |
@@ -57,12 +58,13 @@ needing a server.
 | `src/index.js` | start-up: config, database, one connection per server |
 | `src/config.js` | reads and validates `SERVERS` |
 | `src/haven.js` | Haven client: login, messages, member lookups, sending |
-| `src/router.js` | admin check, `?remote`, guest check, cooldowns, error handling |
+| `src/router.js` | admin check, `?remote`, guest check, cooldowns, payday, error handling |
 | `src/db.js` | SQLite storage |
 | `src/cooldowns.js`, `src/duration.js` | cooldown checks and `30sec`/`5min`/`1hr` text |
 | `src/items.js` | everything that can be in a Backpack or safe, with sell prices |
 | `src/storage.js` | Backpack and safe space, choosing items by name, amount or tier |
-| `src/hospital.js`, `src/milestones.js` | hunting's hospital bills; economy command milestones |
+| `src/hospital.js`, `src/milestones.js` | hospital bills; economy command milestones |
+| `src/crew.js` | crew: catching alongside you, sharing the risk, wages and payday |
 | `src/members.js` | `@user` lookup shared by commands |
 | `src/commands/` | one file per command; `index.js` lists them |
 

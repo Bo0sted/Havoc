@@ -39,14 +39,17 @@ export default {
       `Profile Settings: Gifts ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'}`,
     ];
 
-    // Tools in shop order (poles, pickaxes, guns); the safe is listed under Assets.
+    // Tools in shop order (poles, pickaxes, guns, crew outfits); the safe is listed under Assets.
     const kinds = Object.keys(KINDS);
     const rounds = db.ammo(server.key, who.id);
     const tools = db.tools(server.key, who.id)
       .map((t) => ({ ...t, tool: toolById.get(t.item) }))
       .filter((t) => t.tool && t.kind !== 'safe')
       .sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind))
-      .map(({ kind, uses, tool }) => `${KINDS[kind].emoji} ${tool.name} (${breakable(tool) ? wear(kind, uses) : `${rounds.get(tool.ammo) ?? 0} rounds left`})`);
+      .map(({ kind, uses, tool }) => {
+        const note = breakable(tool) ? wear(kind, uses) : tool.ammo ? `${rounds.get(tool.ammo) ?? 0} rounds left` : '';
+        return `${KINDS[kind].emoji} ${tool.name}${note && ` (${note})`}`;
+      });
 
     const backpack = placeOf(db, server.key, who.id, 'backpack');
     const assets = ['**Assets**', RARITY_KEY, `🎒 Backpack (${backpack.used}/${backpack.space}): ${contents(backpack.rows)}`];

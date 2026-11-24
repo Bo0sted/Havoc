@@ -34,7 +34,7 @@ export default {
   name: 'shop',
   category: 'economy',
   usage: ['', '<number|name>', 'promo <name>'],
-  description: 'fishing poles, pickaxes, licenses, guns, ammo, safes, energy recovery and your promos; buy with `shop <number>` (or the item\'s name)',
+  description: 'fishing poles, pickaxes, licenses, guns, ammo, safes, energy recovery, crew outfits and your promos; buy with `shop <number>` (or the item\'s name)',
   cooldown: 5_000,
   economy: true,
   // Browsing has its own cooldown, so looking never holds up buying.
@@ -51,12 +51,16 @@ export default {
   },
 };
 
-// Items are numbered 1, 2, 3… straight down the list, in this order.
+// Items are numbered 1, 2, 3… straight down the list, in this order (new
+// sections go at the end, so the old numbers keep working).
 const kind = (k) => TOOLS.filter((t) => t.kind === k);
-const STOCK = [...kind('pole'), ...kind('pickaxe'), ...LICENSES, ...kind('gun'), ...AMMO, ...kind('safe'), ...BOOSTS];
+const CREW = [...LICENSES.filter((l) => l.crew), ...kind('boat'), ...kind('mine_site'), ...kind('land')];
+const STOCK = [...kind('pole'), ...kind('pickaxe'), ...LICENSES.filter((l) => !l.crew), ...kind('gun'), ...AMMO, ...kind('safe'), ...BOOSTS, ...CREW];
 const numberOf = (item) => STOCK.indexOf(item) + 1;
 const gives = (boost) => (boost.energy === Infinity ? 'full energy' : `+${boost.energy} energy`);
 const gunFor = (ammo) => TOOLS.find((t) => t.ammo === ammo.id);
+const a = (name) => (/^[aeiou]/i.test(name) ? 'an' : 'a');
+const outfit = (t) => `room for ${t.crew === Infinity ? 'any number of' : t.crew} crew${t.perk ? ` · ${t.perk}` : ''}`;
 const game = (gun) => (gun.big ? `small + big game (${gun.hospital}% hospital risk on big game)` : 'small game only');
 
 // What someone already has (their tools, licenses and ammo with rounds
@@ -83,11 +87,14 @@ function list(prefix, user, server, db) {
     [`**Shop** (buy with \`${prefix}shop <number>\`, e.g. \`${prefix}shop 1\`)`, '🟢 = Items you have'],
     [`${KINDS.pole.emoji} **Fishing poles**`, ...tools('pole')],
     [`${KINDS.pickaxe.emoji} **Pickaxes**`, ...tools('pickaxe')],
-    ['🪪 **Licenses** (yours for good)', ...LICENSES.map((l) => line(l, `needed ${l.needed}`))],
+    ['🪪 **Licenses** (yours for good)', ...LICENSES.filter((l) => !l.crew).map((l) => line(l, `needed ${l.needed}`))],
     [`${KINDS.gun.emoji} **Guns** (never break; 1 round a hunt)`, ...kind('gun').map((g) => line(g, game(g)))],
     ['📦 **Ammo**', ...AMMO.map((a) => line(a, `${a.rounds} rounds for the ${gunFor(a).name}`))],
     [`${KINDS.safe.emoji} **Safes** (room for things outside your Backpack)`, ...kind('safe').map((t) => line(t, `holds ${t.space.toLocaleString('en-US')} items`))],
     ['⚡ **Recovery** (used right away, one an hour)', ...BOOSTS.map((b) => line(b, gives(b)))],
+    [`👷 **Crew** (see \`${prefix}crew\`; 2 crew per job without an outfit, each perk adds to the last)`,
+      ...LICENSES.filter((l) => l.crew).map((l) => line(l, `needed ${l.needed}`)),
+      ...['boat', 'mine_site', 'land'].flatMap((k) => kind(k).map((t) => line(t, `${KINDS[k].emoji} ${outfit(t)}`)))],
     ...(promos.length ? [['🎁 **Your promos**', ...promos.map((p) => `\`${prefix}shop promo ${p.id}\` ${p.label}`)]] : []),
   ].map((section) => section.join('\n'));
 }
@@ -114,7 +121,7 @@ function buy(text, { prefix, user, server, db, track, reply, awaitAnswer }) {
   const held = db.tool(server.key, user.id, tool.kind);
   const current = held && toolById.get(held.item);
 
-  if (current?.id === tool.id) return reply(`You already have a ${tool.name}${breakable(tool) ? ` (${wear(tool.kind, held.uses)})` : ''}.`);
+  if (current?.id === tool.id) return reply(`You already have ${a(tool.name)} ${tool.name}${breakable(tool) ? ` (${wear(tool.kind, held.uses)})` : ''}.`);
   if (current && rankOf(current) > rankOf(tool)) return reply(`You already have a better ${noun}: ${current.name}.`);
   if (tool.kind === 'gun' && !db.licenses(server.key, user.id).includes('gun_license')) {
     return reply(`You need a Gun License to buy a gun. It's number ${numberOf(licenseById.get('gun_license'))} in the shop.`);
@@ -135,19 +142,20 @@ function buy(text, { prefix, user, server, db, track, reply, awaitAnswer }) {
   const now = formatMoney(db.cents(server.key, user.id));
   const old = rounds ? `${current.name} (and ${rounds} ${rounds === 1 ? 'round' : 'rounds'})` : current?.name;
   return reply(charmed + (credit
-    ? `🛒 You traded in your ${old} for ${gained(credit)} and bought a ${tool.name} for ${paid(coupon.due)}. You now have ${now}.`
-    : `🛒 You bought a ${tool.name} for ${paid(coupon.due)}. You now have ${now}.`));
+    ? `🛒 You traded in your ${old} for ${gained(credit)} and bought ${a(tool.name)} ${tool.name} for ${paid(coupon.due)}. You now have ${now}.`
+    : `🛒 You bought ${a(tool.name)} ${tool.name} for ${paid(coupon.due)}. You now have ${now}.`));
 }
 
 function buyLicense(license, { user, server, db, track, reply }) {
-  if (db.licenses(server.key, user.id).includes(license.id)) return reply(`You already have a ${license.name}.`);
+  const name = license.crew ? license.name : `a ${license.name}`;
+  if (db.licenses(server.key, user.id).includes(license.id)) return reply(`You already have ${name}.`);
   const coupon = couponFor(db, server.key, user.id, license.price, track);
   const balance = db.cents(server.key, user.id);
   if (!db.buyLicense(server.key, user.id, license.id, coupon.due)) {
     return reply(`That costs ${formatMoney(coupon.due)}. You only have ${formatMoney(balance)}.`);
   }
   track.lost('shop', license.price);
-  return reply(`${coupon.spend()}🪪 You bought a ${license.name} for ${paid(coupon.due)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
+  return reply(`${coupon.spend()}🪪 You bought ${name} for ${paid(coupon.due)}. You now have ${formatMoney(db.cents(server.key, user.id))}.`);
 }
 
 // Ammo only for the gun someone has: anything else wouldn't fit it.

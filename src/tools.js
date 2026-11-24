@@ -2,11 +2,11 @@
 // person), ammo and licenses, plus the promos that give tools away.
 // Poles and pickaxes are safe for `guaranteed` uses; after that each use has
 // a `breakChance`% chance of breaking it, and the use after `max` always
-// does. Guns and safes never break. Within a kind, later tools are better:
-// upgrading means buying one further down the list (downgrading isn't
-// allowed). Ids are stored in the database, so never rename one. Poles last
-// about twice as many uses as pickaxes of the same tier: a cast costs a
-// quarter of a swing's energy, so fishing goes through them much faster.
+// does. Guns, safes and crew outfits never break. Within a kind, later tools
+// are better: upgrading means buying one further down the list (downgrading
+// isn't allowed). Ids are stored in the database, so never rename one. Poles
+// last about twice as many uses as pickaxes of the same tier: a cast costs
+// half a swing's energy, so fishing goes through them faster.
 import { matchAnswer } from './answers.js';
 
 export const KINDS = {
@@ -14,6 +14,9 @@ export const KINDS = {
   pickaxe: { noun: 'pickaxe', unit: 'swings', emoji: '⛏️' },
   gun: { noun: 'gun', unit: 'rounds', emoji: '🔫' },
   safe: { noun: 'safe', emoji: '🔒' },
+  boat: { noun: 'boat', emoji: '🚤' },
+  mine_site: { noun: 'mine', emoji: '🏗️' },
+  land: { noun: 'hunting land', emoji: '🏕️' },
 };
 
 export const TOOLS = [
@@ -48,6 +51,21 @@ export const TOOLS = [
   { id: 'liberty_safe', kind: 'safe', name: 'Liberty Safe', price: 2_500_000, space: 150 },
   { id: 'fort_knox_safe', kind: 'safe', name: 'Fort Knox Safe', price: 10_000_000, space: 400 },
   { id: 'swiss_bank_vault', kind: 'safe', name: 'Swiss Bank Vault', price: 40_000_000, space: 1_000 },
+
+  // Crew outfits (crew.js), one kind per job: how many crew it has room for
+  // (2 with none), and a perk that adds to the ones before it.
+  { id: 'jon_boat', kind: 'boat', name: 'Jon Boat', price: 5_000_000, crew: 4 },
+  { id: 'bass_boat', kind: 'boat', name: 'Bass Boat', price: 25_000_000, crew: 6, perk: 'a fish finder: no empty casts' },
+  { id: 'offshore_boat', kind: 'boat', name: 'Offshore Boat', price: 125_000_000, crew: 10, perk: 'better rare and epic odds' },
+  { id: 'sportfishing_yacht', kind: 'boat', name: 'Sportfishing Yacht', price: 625_000_000, crew: Infinity, perk: 'better legendary odds' },
+  { id: 'mining_claim', kind: 'mine_site', name: 'Mining Claim', price: 5_000_000, crew: 4 },
+  { id: 'quarry', kind: 'mine_site', name: 'Quarry', price: 25_000_000, crew: 6, perk: 'pickaxes last twice as long' },
+  { id: 'open_pit_mine', kind: 'mine_site', name: 'Open-Pit Mine', price: 125_000_000, crew: 10, perk: 'better rare and epic odds' },
+  { id: 'mining_company', kind: 'mine_site', name: 'Mining Company', price: 625_000_000, crew: Infinity, perk: 'better legendary odds' },
+  { id: 'hunting_lease', kind: 'land', name: 'Hunting Lease', price: 5_000_000, crew: 4 },
+  { id: 'hunting_lodge', kind: 'land', name: 'Hunting Lodge', price: 25_000_000, crew: 6, perk: 'hurt crew heal twice as fast' },
+  { id: 'private_ranch', kind: 'land', name: 'Private Ranch', price: 125_000_000, crew: 10, perk: 'better rare and epic odds' },
+  { id: 'game_reserve', kind: 'land', name: 'Game Reserve', price: 625_000_000, crew: Infinity, perk: 'better legendary odds' },
 ];
 
 // Sold by the box; each fits one gun. $5-50 a round, small next to the
@@ -59,10 +77,12 @@ export const AMMO = [
   { id: 'ammo_50bmg', name: '.50 BMG Ammo', price: 250_000, rounds: 50 },
 ];
 
-// Bought once, kept for good, never sold.
+// Bought once, kept for good, never sold. `crew` ones are listed with the
+// crew outfits in ?shop.
 export const LICENSES = [
   { id: 'gun_license', name: 'Gun License', price: 50_000, needed: 'to buy a gun' },
   { id: 'hunting_license', name: 'Hunting License', price: 100_000, needed: 'to hunt' },
+  { id: 'workers_comp', name: "Workers' Comp Insurance", price: 250_000, needed: 'to hire crew', crew: true },
 ];
 
 export const ammoById = new Map(AMMO.map((a) => [a.id, a]));

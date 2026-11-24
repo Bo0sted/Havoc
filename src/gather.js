@@ -1,6 +1,7 @@
 // ?fish and ?mine: spend energy and use your tool (which may break), then
-// roll a tier by weight and an item within it (?hunt shares the rolling). Rolls use crypto.randomInt,
-// the OS's secure random source, like every game.
+// roll a tier by weight and an item within it (?hunt shares the rolling),
+// and your crew come along (crew.js). Every job can land you in the
+// hospital. Rolls use crypto.randomInt, the OS's secure random source, like every game.
 import { randomInt } from 'node:crypto';
 import { ITEMS } from './items.js';
 import { KINDS, PROMOS, toolById } from './tools.js';
@@ -8,6 +9,8 @@ import { energyOf, spend, waitFor } from './energy.js';
 import { formatWait } from './duration.js';
 import { placeOf, safeOf } from './storage.js';
 import { drawCharm, kickedIn } from './charms.js';
+import { hospitalize, billLine } from './hospital.js';
+import { partyFor, crewTrip } from './crew.js';
 
 export const pick = (list) => list[randomInt(list.length)];
 const LADDER = ['trash', 'common', 'rare', 'epic', 'legendary'];
@@ -73,7 +76,7 @@ export function foundLine(emoji, name, verb, item) {
   return `${emoji} **${name}** ${verb} ${item.emoji} **${item.name}** (${item.tier})!${shout}`;
 }
 
-export function gatherCommand({ name, description, kind, from, stream, verb, activity, energy, tiers, misses, noTool, cooldownText }) {
+export function gatherCommand({ name, description, kind, from, stream, verb, activity, energy, tiers, misses, hurt, noTool, cooldownText }) {
   const { noun, emoji } = KINDS[kind];
 
   return {
@@ -116,15 +119,27 @@ export function gatherCommand({ name, description, kind, from, stream, verb, act
         return reply(`${charmed}${emoji} ${tool.breaks} Buy a new one with \`${prefix}shop\`.`);
       }
 
+      const party = partyFor(db, server.key, user.id, from, tiers);
       spend(db, server.key, user.id, charmedCost(charm, energy, bar.points));
-      db.useTool(server.key, user.id, kind);
-      const found = charmedCatch(charm, tiers, from);
-      if (!found.length) return reply(`${charmed}${emoji} ${pick(misses)}`);
-      for (const item of found) {
-        db.addItem(server.key, user.id, item.id);
-        track.earned(stream, item.price);
+      // A Quarry's pickaxes wear on only half the swings.
+      if (!(party.job === 'mine' && party.tier >= 2 && randomInt(2))) db.useTool(server.key, user.id, kind);
+      const found = charmedCatch(charm, party.yours, from);
+      let lines;
+      if (!found.length) {
+        lines = [`${emoji} ${pick(misses)}`];
+      } else if (found[0].tier === 'hospital') {
+        const bill = hospitalize(db, server.key, user.id);
+        track.lost(stream, bill.bill - bill.forgiven);
+        lines = [`🏥 ${pick(hurt)} ${billLine(bill)}`];
+      } else {
+        for (const item of found) {
+          db.addItem(server.key, user.id, item.id);
+          track.earned(stream, item.price);
+        }
+        lines = found.map((item) => foundLine(emoji, user.name, verb, item));
       }
-      return reply(charmed + found.map((item) => foundLine(emoji, user.name, verb, item)).join('\n'));
+      lines.push(...crewTrip(db, server.key, user.id, party, { energy, stream, emoji, verb, track }));
+      return reply(charmed + lines.join('\n'));
     },
   };
 }

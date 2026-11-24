@@ -4,7 +4,7 @@ import { WHEELS } from '../wheel.js';
 import { spinGif, REVEAL, BUSY } from '../wheel-gif.js';
 import { claimGame } from '../games.js';
 import { placeOf } from '../storage.js';
-import { hospitalize, takeable, billLine } from '../hospital.js';
+import { hospitalize, takeable, billLine, WHEEL_BRACKETS } from '../hospital.js';
 import { surge, energyOf } from '../energy.js';
 import { charmById, charmsOf, givesCharm, charmName, TYPES, SEVERITIES } from '../charms.js';
 import { gained, lost, green, red } from '../colors.js';
@@ -178,12 +178,12 @@ function land(slice, ctx) {
       return { text: taken ? `🧾 IRS audit! They took ${lost(taken)} (${Math.round(slice.rate * 100)}% of your cash, ${formatMoney(slice.max)} at most).` : '🧾 The IRS audited you and felt sorry for you. Lucky escape!' };
     }
     case 'snake': {
-      const paid = hospitalize(db, server.key, user.id, slice.scale);
+      const paid = hospitalize(db, server.key, user.id, slice.scale, WHEEL_BRACKETS);
       track.lost('wheel', paid.bill - paid.forgiven);
       return { text: `🐍 A snake bit you. ${billLine(paid)}` };
     }
     case 'hospital': {
-      const paid = hospitalize(db, server.key, user.id);
+      const paid = hospitalize(db, server.key, user.id, 1, WHEEL_BRACKETS);
       track.lost('wheel', paid.bill - paid.forgiven);
       return { text: `🏥 You fell off the wheel. ${billLine(paid)}` };
     }
@@ -278,8 +278,8 @@ function odds() {
     surge: () => [green, 'Energy Surge: double energy max for 12 hours'],
     again: () => [green, 'Spin again'],
     wild: () => [String, `Wild card: ${s.options.map((o) => o.name).join(', ')}`],
-    snake: () => [red, `Snake bite: a hospital bill, ${s.scale * 100}% of a hunting one`],
-    hospital: () => [red, 'Hospital: a hunting-sized hospital bill'],
+    snake: () => [red, `Snake bite: ${s.scale * 100}% of a hospital bill`],
+    hospital: () => [red, 'Hospital: a hospital bill'],
     pickpocket: () => [red, 'Thief: lose a random Backpack item (never a legendary)'],
     robbed: () => [red, 'Robbed: lose your best Backpack item (never a legendary)'],
     jail: () => [red, `Jail for ${s.ms / 60_000} minutes`],

@@ -11,6 +11,7 @@ import pokemon from './pokemon.js';
 import fish from './fish.js';
 import mine from './mine.js';
 import hunt from './hunt.js';
+import crew from './crew.js';
 import money from './money.js';
 import sell from './sell.js';
 import give from './give.js';
@@ -39,4 +40,4 @@ import remind from './remind.js';
 import snooze from './snooze.js';
 import keys from './keys.js';
 
-export default [help, cat, dog, fox, duck, funfact, dadjoke, advice, pokemon, fish, mine, hunt, daily, wheel, lottery, hangman, money, charm, value, sell, safe, give, shop, top, gdp, bet, blowup, id, remind, snooze, cooldown, botchannel, energy, remote, pfp, status, consoleCommand, deleteCommand, keys];
+export default [help, cat, dog, fox, duck, funfact, dadjoke, advice, pokemon, fish, mine, hunt, crew, daily, wheel, lottery, hangman, money, charm, value, sell, safe, give, shop, top, gdp, bet, blowup, id, remind, snooze, cooldown, botchannel, energy, remote, pfp, status, consoleCommand, deleteCommand, keys];

@@ -20,6 +20,7 @@ export const STREAMS = {
   gifts: { label: 'Gifts', emoji: '🤝', earned: 'received', lost: 'given' },
   milestones: { label: 'Milestones', emoji: '🏅' },
   shop: { label: 'Shop', emoji: '🛒', lost: 'spent' },
+  crew: { label: 'Crew', emoji: '👷', lost: 'spent on hiring and payroll' },
   wheel: { label: 'Wheel', emoji: '🎡' },
   charms: { label: 'Charms', emoji: '🍀' },
 };
