@@ -144,7 +144,8 @@ const COLUMNS = [
 ];
 
 // Everything that acts on one person's economy profile, as (server, userId,
-// ...): these follow ?link to the linked profile. A new one belongs here too.
+// ...): in db.linked these follow ?link to the linked profile. A new economy
+// one belongs here too, and nothing else does.
 const PROFILE = [
   'cents', 'items', 'holdBet', 'settleBet', 'betStats', 'tool', 'tools', 'useTool', 'breakTool', 'buyTool', 'buyGun',
   'ammo', 'buyAmmo', 'useAmmo', 'licenses', 'giftsOff', 'setGiftsOff', 'buyLicense', 'countCommand', 'commandCount',
@@ -155,8 +156,10 @@ const PROFILE = [
 ];
 
 // A profile table's rows for everyone on server ?1, as (user_id, ...cols):
-// someone with a ?link has the linked profile's rows, under their own id.
-const counted = (table, cols) => `(SELECT user_id, ${cols} FROM ${table}
+// their own, or (linkedRows) with someone who has a ?link getting the linked
+// profile's rows, under their own id.
+const ownRows = (table, cols) => `(SELECT user_id, ${cols} FROM ${table} WHERE server = ?1)`;
+const linkedRows = (table, cols) => `(SELECT user_id, ${cols} FROM ${table}
   WHERE server = ?1 AND user_id NOT IN (SELECT user_id FROM links WHERE server = ?1)
   UNION ALL SELECT l.user_id, ${cols.map((c) => `t.${c}`)} FROM links l
   JOIN ${table} t ON t.server = l.to_server AND t.user_id = l.to_user WHERE l.server = ?1)`;
@@ -177,6 +180,15 @@ export function openDb(path) {
     }
   }
   const q = (sql) => db.prepare(sql);
+  // Server-wide totals and lists over `rows` (ownRows or linkedRows).
+  const totals = (rows) => ({
+    totalCents: q(`SELECT COALESCE(SUM(cents), 0) AS cents FROM ${rows('wallets', ['cents'])}`),
+    totalItems: q(`SELECT item, SUM(qty) AS qty FROM (SELECT item, qty FROM ${rows('items', ['item', 'qty'])}
+      UNION ALL SELECT item, qty FROM ${rows('safe_items', ['item', 'qty'])}) WHERE qty > 0 GROUP BY item`),
+    wallets: q(`SELECT user_id, cents FROM ${rows('wallets', ['cents'])}`),
+    allItems: q(`SELECT user_id, item, qty FROM ${rows('items', ['item', 'qty'])} WHERE qty > 0
+      UNION ALL SELECT user_id, item, qty FROM ${rows('safe_items', ['item', 'qty'])} WHERE qty > 0`),
+  });
 
   const s = {
     overrides: q('SELECT command, ms FROM cooldown_overrides WHERE server = ?'),
@@ -190,12 +202,7 @@ export function openDb(path) {
     botChannels: q('SELECT channel_id FROM bot_channels WHERE server = ? ORDER BY rowid'),
     addBotChannel: q('INSERT OR IGNORE INTO bot_channels (server, channel_id) VALUES (?, ?)'),
     removeBotChannel: q('DELETE FROM bot_channels WHERE server = ? AND channel_id = ?'),
-    totalCents: q(`SELECT COALESCE(SUM(cents), 0) AS cents FROM ${counted('wallets', ['cents'])}`),
-    totalItems: q(`SELECT item, SUM(qty) AS qty FROM (SELECT item, qty FROM ${counted('items', ['item', 'qty'])}
-      UNION ALL SELECT item, qty FROM ${counted('safe_items', ['item', 'qty'])}) WHERE qty > 0 GROUP BY item`),
-    wallets: q(`SELECT user_id, cents FROM ${counted('wallets', ['cents'])}`),
-    allItems: q(`SELECT user_id, item, qty FROM ${counted('items', ['item', 'qty'])} WHERE qty > 0
-      UNION ALL SELECT user_id, item, qty FROM ${counted('safe_items', ['item', 'qty'])} WHERE qty > 0`),
+    ...totals(ownRows),
     daily: q('SELECT last, streak FROM dailies WHERE server = ? AND user_id = ?'),
     setDaily: q('INSERT INTO dailies (server, user_id, last, streak) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET last = excluded.last, streak = excluded.streak'),
     lotteryStreak: q('SELECT streak FROM lottery_streaks WHERE server = ? AND user_id = ?'),
@@ -303,12 +310,31 @@ export function openDb(path) {
     }
   }
 
-  // The profile someone's rows are under: the one linked in place of theirs
-  // (?link), or their own.
+  // The profile someone's rows are under in db.linked: the one linked in
+  // place of theirs (?link), or their own.
   function profileOf(server, userId) {
     const link = s.link.get(server, userId);
     return link ? [link.to_server, link.to_user] : [server, userId];
   }
+
+  // A gift: `cents` from one wallet to the other and each { item, qty }
+  // from one Backpack to the other, recorded in 'gifts' as `value` cents
+  // given and received. `giver` and `taker` are [server, userId], so in
+  // db.linked either can be a profile on another server. False (and nothing
+  // changes) when the giver doesn't have all of it.
+  const transfer = (giver, taker, { cents = 0, lots = [] }, value) => atomic(() => {
+    if (cents > 0) {
+      if (s.takeCents.run(cents, ...giver, cents).changes === 0) return false;
+      s.addCents.run(...taker, cents);
+    }
+    for (const { item, qty } of lots) {
+      if (s.backpack.take.run(qty, ...giver, item, qty).changes === 0) return false;
+      s.backpack.add.run(...taker, item, qty);
+    }
+    s.lose.run(...giver, 'gifts', value);
+    s.earn.run(...taker, 'gifts', value);
+    return true;
+  });
 
   // Bets still held when Havoc last stopped never finished: hand them back.
   atomic(() => {
@@ -546,26 +572,7 @@ export function openDb(path) {
       }
       return true;
     }),
-    // A gift: `cents` from one wallet to the other and each { item, qty }
-    // from one Backpack to the other, recorded in 'gifts' as `value` cents
-    // given and received. False (and nothing changes) when the giver
-    // doesn't have all of it.
-    // Either side may be linked to a profile on another server.
-    give: (server, from, to, { cents = 0, lots = [] }, value) => atomic(() => {
-      const giver = profileOf(server, from);
-      const taker = profileOf(server, to);
-      if (cents > 0) {
-        if (s.takeCents.run(cents, ...giver, cents).changes === 0) return false;
-        s.addCents.run(...taker, cents);
-      }
-      for (const { item, qty } of lots) {
-        if (s.backpack.take.run(qty, ...giver, item, qty).changes === 0) return false;
-        s.backpack.add.run(...taker, item, qty);
-      }
-      s.lose.run(...giver, 'gifts', value);
-      s.earn.run(...taker, 'gifts', value);
-      return true;
-    }),
+    give: (server, from, to, gift, value) => transfer([server, from], [server, to], gift, value),
     // A hospital bill of up to `bill` cents: cash first, then Backpack items,
     // then safe items, in the order `takeable(id)` ranks them ({ price, rank },
     // or null for anything that can't be sold and so is never taken). An
@@ -679,15 +686,27 @@ export function openDb(path) {
     link: (server, userId, toServer, toUser) => s.setLink.run(server, userId, toServer, toUser),
     // True when there was a link to remove.
     unlink: (server, userId) => s.unlink.run(server, userId).changes > 0,
-    profileOf,
+    // Always your own here; db.linked follows ?link.
+    profileOf: (server, userId) => [server, userId],
 
     close: () => db.close(),
   };
-  for (const name of PROFILE) {
-    const run = api[name];
-    api[name] = (server, userId, ...rest) => run(...profileOf(server, userId), ...rest);
-  }
-  return api;
+
+  // ?link only applies to economy commands: the router gives them this
+  // instead, where everything on one person's profile (PROFILE, gifts and
+  // server totals) uses the linked profile. Everything else is the same.
+  const sums = totals(linkedRows);
+  const linked = {
+    ...api,
+    profileOf,
+    give: (server, from, to, gift, value) => transfer(profileOf(server, from), profileOf(server, to), gift, value),
+    totalCents: (server) => sums.totalCents.get(server).cents,
+    totalItems: (server) => sums.totalItems.all(server),
+    wallets: (server) => sums.wallets.all(server),
+    allItems: (server) => sums.allItems.all(server),
+  };
+  for (const name of PROFILE) linked[name] = (server, userId, ...rest) => api[name](...profileOf(server, userId), ...rest);
+  return { ...api, linked };
 }
 
 // The same statements for the Backpack and the safe, as s.backpack / s.safe.

@@ -60,7 +60,7 @@ needing a server.
 | `src/config.js` | reads and validates `SERVERS` |
 | `src/haven.js` | Haven client: login, messages, member lookups, sending |
 | `src/router.js` | admin check, `?remote`, guest check, cooldowns, payday, error handling |
-| `src/db.js` | SQLite storage, and following `?link` to the linked profile |
+| `src/db.js` | SQLite storage; `db.linked` follows `?link` and only economy commands get it |
 | `src/cooldowns.js`, `src/duration.js` | cooldown checks and `30sec`/`5min`/`1hr` text |
 | `src/items.js` | everything that can be in a Backpack or safe, with sell prices |
 | `src/storage.js` | Backpack and safe space, choosing items by name, amount or tier |

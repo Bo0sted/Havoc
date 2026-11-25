@@ -11,6 +11,8 @@
 //      goes wrong is logged to the console only
 //   7. an economy command that gained or lost money (through `track`) counts
 //      toward milestones (not while remote)
+// Commands in the economy category get db.linked, which follows ?link;
+// everything else gets the plain db, so a link never reaches them.
 // A command waiting on an answer (awaitAnswer) sees the person's messages first.
 import { formatWait } from './duration.js';
 import { chunks } from './chunks.js';
@@ -54,10 +56,11 @@ export function createRouter({ prefix, commands, servers, db, cooldowns, reminde
     const server = (isAdmin && cmd.name !== 'remote' && remotes.get(remoteKey(home, userId))) || home;
     const remote = server !== home;
     const out = output(home, { channelCode, message, threadId }, remote && server.name, prefix);
+    const data = cmd.category === 'economy' ? db.linked : db;
 
     try {
       if (cmd.economy && !isAdmin && (await refuseGuest(home, userId, channelCode, out))) return;
-      const jailed = cmd.economy && !cmd.jailFree ? db.jailedUntil(server.key, userId) - Date.now() : 0;
+      const jailed = cmd.economy && !cmd.jailFree ? data.jailedUntil(server.key, userId) - Date.now() : 0;
       if (jailed > 0) return await out.reply(`🚔 You're in jail for another ${formatWait(jailed)}. Only \`${prefix}stats\` works until then.`);
       if (!isAdmin) {
         // A subcommand can have a cooldown of its own (e.g. ?bet record).
@@ -67,11 +70,11 @@ export function createRouter({ prefix, commands, servers, db, cooldowns, reminde
       }
       const busy = cooldowns.takeGlobal(cmd);
       if (busy) return await out.reply(`⏳ Everyone wants \`${prefix}${cmd.name}\` right now! It's free again in ${formatWait(busy)}.`);
-      const paid = cmd.economy && !remote && payday(db, server.key, userId);
+      const paid = cmd.economy && !remote && payday(data, server.key, userId);
       if (paid) await out.reply(paid);
-      const track = tracker(db, server.key, userId);
+      const track = tracker(data, server.key, userId);
       await cmd.run({
-        cmd, prefix, args, message, channel, threadId, dm: dm ?? null, isAdmin, remote, home, server, db, cooldowns, commands, servers, track, reminders,
+        cmd, prefix, args, message, channel, threadId, dm: dm ?? null, isAdmin, remote, home, server, db: data, cooldowns, commands, servers, track, reminders,
         // The person running it, or null while remote: their id on this
         // server means someone else (or no one) on the other one.
         user: remote ? null : { id: userId, name: message.username, avatar: message.avatar },
@@ -103,7 +106,7 @@ export function createRouter({ prefix, commands, servers, db, cooldowns, reminde
   // A milestone reached is paid at once and announced with a ping: its own
   // message (not a reply, not silent) where the command was typed.
   async function milestone(home, { channelCode, message, threadId }) {
-    const congrats = countCommand(db, home.key, message.user_id);
+    const congrats = countCommand(db.linked, home.key, message.user_id);
     if (!congrats) return;
     const login = await home.client.loginName(message.user_id, channelCode);
     home.client.send(channelCode, congrats(`@${login ?? message.username}`), { threadId, silent: false });
