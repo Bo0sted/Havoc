@@ -218,9 +218,10 @@ export async function spinGif(name, index, waiting) {
 }
 
 // At start-up: deletes GIFs that aren't part of the wheels any more (an
-// older version, or half-written by a restart), then draws every missing
-// one, one at a time. A restart part-way just carries on from there.
-export async function warmUp() {
+// older version, or half-written by a restart) and every server's saved
+// upload links for them (`db`), then draws every missing one, one at a
+// time. A restart part-way just carries on from there.
+export async function warmUp(db) {
   mkdirSync(CACHE, { recursive: true });
   const wheels = Object.keys(WHEELS).filter((name) => {
     if (artMatches(name)) return true;
@@ -228,10 +229,13 @@ export async function warmUp() {
     return false;
   });
   const all = wheels.flatMap((name) => WHEELS[name].flatMap((_, index) => VARIANTS.map((__, variant) => ({ name, index, variant }))));
-  const wanted = new Set(all.map(({ name, index, variant }) => `${keyOf(name, index, variant)}.gif`));
+  const keys = all.map(({ name, index, variant }) => keyOf(name, index, variant));
+  const wanted = new Set(keys.map((key) => `${key}.gif`));
   const stale = readdirSync(CACHE).filter((file) => !wanted.has(file));
   for (const file of stale) unlinkSync(new URL(file, CACHE));
   if (stale.length) console.log(`[wheel] Deleted ${stale.length} old or unfinished wheel GIFs.`);
+  const forgotten = db.keepUploads(keys);
+  if (forgotten) console.log(`[wheel] Forgot ${forgotten} upload links for old wheel GIFs.`);
 
   const missing = all.filter(({ name, index, variant }) => !ready(keyOf(name, index, variant)));
   if (!missing.length) return;

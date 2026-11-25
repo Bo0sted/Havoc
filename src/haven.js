@@ -12,16 +12,13 @@ const EULA_VERSION = '2.0';
 const SEND_MAX = 9;
 const SEND_WINDOW = 10_250;
 
-// How long an uploaded image is posted again before uploading it afresh
-// (in case the server cleaned old uploads out).
-const UPLOAD_REUSE = 24 * 3_600_000;
-
 // A failure whose reason is fine to show in chat.
 const refusal = (reason) => Object.assign(new Error(reason), { reason });
 
 export class HavenClient extends EventEmitter {
-  // `keyStore` is this server's encryption storage (db.keyStore).
-  constructor({ url, username, password }, keyStore) {
+  // `keyStore` is this server's encryption storage (db.keyStore), `uploads`
+  // its saved upload links (db.uploadStore).
+  constructor({ url, username, password }, keyStore, uploads) {
     super();
     this.url = url.replace(/\/+$/, '');
     this.username = username;
@@ -47,8 +44,7 @@ export class HavenClient extends EventEmitter {
     // Every message waiting for its echo listens for it (sendForEdit), and a
     // burst of reminders can be many at once; each stops listening when done.
     this.setMaxListeners(0);
-    // Images posted with sendImageOnce: key → { url, at }.
-    this.uploaded = new Map();
+    this.uploads = uploads;
     // Posts waiting to go out, and when the recent ones went.
     this.outbox = [];
     this.sentAt = [];
@@ -529,15 +525,29 @@ export class HavenClient extends EventEmitter {
   }
 
   // Posts an image that's the same every time (`key` names it): uploaded
-  // here once a day at most, then the same file is posted again, so repeats
-  // cost no uploads or disk. `buffer()` makes it when it's needed.
+  // here once and its link saved, then the same file is posted again, so
+  // repeats cost no uploads or disk. The file is checked first and uploaded
+  // afresh if it's gone (a cleanup removed it). `buffer()` makes it when it's needed.
   async sendImageOnce(channelCode, key, buffer, filename, mime, opts) {
-    const known = this.uploaded.get(key);
-    let url = known && Date.now() - known.at < UPLOAD_REUSE ? known.url : null;
-    if (!url) {
+    let url = this.uploads.get(key);
+    if (!url || !(await this.stillUploaded(url))) {
       url = await this.upload(await buffer(), filename, mime);
-      this.uploaded.set(key, { url, at: Date.now() });
+      this.uploads.set(key, url);
     }
     await this.post(channelCode, { content: url, isImage: true }, opts);
+  }
+
+  // Whether an /uploads/ path still serves its file (false if it doesn't answer).
+  async stillUploaded(path) {
+    try {
+      const res = await fetch(`${this.url}${path}`, {
+        method: 'HEAD',
+        headers: { Authorization: `Bearer ${this.token}` },
+        signal: AbortSignal.timeout(5_000),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 }

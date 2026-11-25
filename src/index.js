@@ -38,7 +38,7 @@ const reminders = createReminders({ db, servers, prefix: PREFIX });
 const router = createRouter({ prefix: PREFIX, commands, servers, db, cooldowns, reminders });
 
 // Draws any wheel GIFs that aren't drawn yet, in the background (once; they're kept).
-warmUp().catch((err) => console.error('[wheel] Warm-up failed:', err));
+warmUp(db).catch((err) => console.error('[wheel] Warm-up failed:', err));
 
 // Expired guest blocks, jail terms, stale cooldowns and reminders too old to
 // snooze are cleared out hourly.
@@ -51,7 +51,7 @@ setInterval(() => {
 
 for (const server of servers) {
   const log = (fn) => (msg) => fn(`[${server.name}] ${msg}`);
-  server.client = new HavenClient(server, db.keyStore(server.key));
+  server.client = new HavenClient(server, db.keyStore(server.key), db.uploadStore(server.key));
   server.client.on('ready', (user) => console.log(`[${server.name}] online as ${user.displayName} (prefix ${PREFIX})`));
   server.client.on('warn', log(console.warn));
   server.client.on('error', (err) => console.error(`[${server.name}] ${err.message}`));

@@ -144,6 +144,10 @@ const SCHEMA = `
     server TEXT NOT NULL, user_id INTEGER NOT NULL, to_server TEXT NOT NULL, to_user INTEGER NOT NULL,
     PRIMARY KEY (server, user_id)
   );
+  CREATE TABLE IF NOT EXISTS uploads (
+    server TEXT NOT NULL, key TEXT NOT NULL, url TEXT NOT NULL,
+    PRIMARY KEY (server, key)
+  );
 `;
 
 // Columns added to a table after it first shipped: [table, column, definition].
@@ -287,6 +291,9 @@ export function openDb(path) {
     purgeReminders: q('DELETE FROM reminders WHERE sent_at IS NOT NULL AND sent_at < ?'),
     encryptionKeys: q('SELECT ecdh, signing FROM encryption_keys WHERE server = ?'),
     setEncryptionKeys: q('INSERT INTO encryption_keys (server, ecdh, signing) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET ecdh = excluded.ecdh, signing = excluded.signing'),
+    upload: q('SELECT url FROM uploads WHERE server = ? AND key = ?'),
+    setUpload: q('INSERT INTO uploads (server, key, url) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET url = excluded.url'),
+    keepUploads: q('DELETE FROM uploads WHERE key NOT IN (SELECT value FROM json_each(?))'),
     keyPin: q('SELECT key FROM key_pins WHERE server = ? AND user_id = ? AND kind = ?'),
     keyPins: q('SELECT user_id, kind, key FROM key_pins WHERE server = ? ORDER BY rowid'),
     setKeyPin: q('INSERT INTO key_pins (server, user_id, kind, key) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET key = excluded.key'),
@@ -647,6 +654,15 @@ export function openDb(path) {
     // One server's encryption storage (see Encryption): Havoc's own keys as
     // private JWKs ({ ecdh, signing } or null), the key pinned for each
     // person ('encryption' or 'signing', as "x.y"), and the key log.
+    // Images uploaded to this server and posted again by link
+    // (sendImageOnce): key → its /uploads/ path. A link only works on the
+    // server it was uploaded to.
+    uploadStore: (server) => ({
+      get: (key) => s.upload.get(server, key)?.url ?? null,
+      set: (key, url) => s.setUpload.run(server, key, url),
+    }),
+    // Forgets every server's saved link for any key not in `keys`.
+    keepUploads: (keys) => s.keepUploads.run(JSON.stringify(keys)).changes,
     keyStore: (server) => ({
       load: () => {
         const row = s.encryptionKeys.get(server);
