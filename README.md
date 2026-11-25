@@ -10,7 +10,7 @@ any number of servers at once and answers messages that start with a prefix
 | `?cat` | a random cat picture | 5sec |
 | `?fish` / `?mine` | go fishing or mining; catches (trash included) go in your Backpack, with a small risk of a hospital bill | 5sec |
 | `?hunt small` / `?hunt big` | go hunting with a Hunting License, a gun and ammo; the biggest risk of a hospital bill | 5sec |
-| `?crew` | hire, fire and rename crew who catch alongside you and share your hospital risk; paid once a day | 5sec |
+| `?crew` | hire, fire and rename crew who catch alongside you and share your hospital risk; paid once a day; `?crew overtime [on|off]` shows how close each is to overtime and can sit out anyone who reaches it | 5sec |
 | `?money` / `?stats [@user]` | money, energy, licenses, crew, tools, Backpack and safe, yours or someone else's | 5sec |
 | `?safe` | move things between your Backpack and your safe, or sell from the safe | 5sec |
 | `?give <user> <amount>` / `?give <user> <item> [amount\|all]` (also `?zelle`) | give someone cash, or items from your Backpack; they get a ping | 5sec |

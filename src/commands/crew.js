@@ -4,7 +4,7 @@ import { KINDS } from '../tools.js';
 import { matchAnswer } from '../answers.js';
 import { claimGame } from '../games.js';
 import { lost } from '../colors.js';
-import { JOBS, BOSS, outfitOf, hirePrice, wageLine, NAMES, crewName, finalPaycheck, nextPayday, names } from '../crew.js';
+import { JOBS, BOSS, SHIFT, outfitOf, offShift, reliefLine, hirePrice, wageLine, NAMES, crewName, finalPaycheck, nextPayday } from '../crew.js';
 
 const ALIASES = { fishing: 'fish', mining: 'mine', hunting: 'hunt', deckhand: 'fish', miner: 'mine', guide: 'hunt' };
 const stamp = (ms) => Math.ceil(ms / 1000);
@@ -13,8 +13,8 @@ const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 export default {
   name: 'crew',
   category: 'economy',
-  usage: ['', 'hire <fish|mine|hunt> [name]', 'fire <name>', 'rename <name> <new name>'],
-  description: `deckhands, miners and hunting guides who catch alongside you and share your risk of the hospital (with ${BOSS} able to work you're the boss and can't get hurt); they need Workers' Comp from the shop and are paid once a day`,
+  usage: ['', 'hire <fish|mine|hunt> [name]', 'fire <name>', 'rename <name> <new name>', 'overtime [on|off]'],
+  description: `deckhands, miners and hunting guides who catch alongside you and share your risk of the hospital (with ${BOSS} able to work you're the boss and can't get hurt); they need Workers' Comp from the shop and are paid once a day; \`overtime\` shows who's near it, and \`overtime on\` sits out anyone who reaches it until payday`,
   cooldown: 5_000,
   economy: true,
   async run({ prefix, args, user, server, db, track, reply, notHere, awaitAnswer }) {
@@ -26,25 +26,27 @@ export default {
       case 'hire': return hire(rest, ctx);
       case 'fire': return fire(rest.join(' '), ctx);
       case 'rename': return rename(rest, ctx);
+      case 'overtime': return overtime(rest[0], ctx);
       default: return reply(usage(prefix));
     }
   },
 };
 
-const usage = (prefix) => `Usage: \`${prefix}crew\`, \`${prefix}crew hire <fish|mine|hunt> [name]\`, \`${prefix}crew fire <name>\` or \`${prefix}crew rename <name> <new name>\``;
+const usage = (prefix) => `Usage: \`${prefix}crew\`, \`${prefix}crew hire <fish|mine|hunt> [name]\`, \`${prefix}crew fire <name>\`, \`${prefix}crew rename <name> <new name>\` or \`${prefix}crew overtime [on|off]\``;
 const find = (crew, name) => crew.find((c) => c.name.toLowerCase() === name.trim().toLowerCase());
 
-// Each job's outfit, crew (who's hurt, and until when) and next hire, then payday.
+// Each job's outfit, crew (who's hurt or sitting out overtime) and next hire, then payday.
 function overview({ prefix, user, server, db }) {
   const now = Date.now();
   const crew = db.crew(server.key, user.id);
+  const relief = db.relief(server.key, user.id);
   const sections = Object.entries(JOBS).map(([job, { label, emoji, noun, start, comp }]) => {
     const { outfit, room } = outfitOf(db, server.key, user.id, job);
     const mine = crew.filter((c) => c.job === job);
-    const ready = mine.filter((c) => c.hurt_until <= now).length;
+    const ready = mine.filter((c) => c.hurt_until <= now && !offShift(relief, c)).length;
     const where = outfit?.name ?? start[0].toUpperCase() + start.slice(1);
     const lines = [`${emoji} **${label}** · ${where} (${mine.length}/${room === Infinity ? '∞' : room} ${noun}s) · ${wageLine(job)} each (+${comp}% workers' comp)`];
-    if (mine.length) lines.push(mine.map((c) => (c.hurt_until > now ? `${c.name} (hurt, back <t:${stamp(c.hurt_until)}:R>)` : c.name)).join(' · '));
+    if (mine.length) lines.push(mine.map((c) => (c.hurt_until > now ? `${c.name} (hurt, back <t:${stamp(c.hurt_until)}:R>)` : offShift(relief, c) ? `${c.name} (off for overtime)` : c.name)).join(' · '));
     if (ready >= BOSS) lines.push("🧢 You're the boss here: you can't get hurt on the job.");
     lines.push(mine.length < room ? `Next hire: ${formatMoney(hirePrice(mine.length))}` : `Full: a bigger ${KINDS[JOBS[job].kind].noun} from \`${prefix}shop\` has room for more.`);
     return lines.join('\n');
@@ -101,6 +103,37 @@ async function hire([what = '', ...named], { prefix, user, server, db, track, re
   track.lost('crew', price);
   const boss = count + 1 === BOSS ? `\n🧢 That's ${BOSS}: you're the boss now, so you can't get hurt ${label.toLowerCase()} while they're all able to work.` : '';
   return reply(`👷 You hired **${name}** as a ${noun} for ${lost(price)}. ${label} crew: ${count + 1}/${room === Infinity ? '∞' : room}. Their wage is ${wageLine(job)} (+${comp}% workers' comp), paid every payday.${boss}`);
+}
+
+// Every job's crew and how far each is from overtime, or until when they're
+// on it (or sitting it out). `on` and `off` switch relief.
+function overtime(arg, { prefix, user, server, db, reply }) {
+  const crew = db.crew(server.key, user.id);
+  const pay = nextPayday(db, server.key, user.id);
+  const until = pay ? `payday <t:${stamp(pay.at)}:R>` : 'payday';
+  const switched = arg?.toLowerCase();
+  if (switched === 'off') {
+    db.setRelief(server.key, user.id, false);
+    return reply("⏱️ Overtime relief is off: everyone works, at 1.5× once they're on overtime.");
+  }
+  if (switched === 'on') {
+    db.setRelief(server.key, user.id, true);
+    const off = crew.filter((c) => offShift(true, c));
+    return reply(`😴 Overtime relief is on: anyone who reaches overtime sits out until payday.${off.length ? `\n${reliefLine(db, server.key, user.id, off, prefix)}` : ''}`);
+  }
+  if (arg) return reply(`Usage: \`${prefix}crew overtime [on|off]\``);
+
+  const relief = db.relief(server.key, user.id);
+  const sections = Object.entries(JOBS).map(([job, { label, emoji, noun }]) => {
+    const mine = crew.filter((c) => c.job === job);
+    const lines = mine.map((c) => `${c.name}: ${c.energy < SHIFT ? `${SHIFT - c.energy} energy until overtime` : relief ? `off until ${until}` : `on overtime (1.5×) until ${until}`}`);
+    return `${emoji} **${label}**\n${lines.length ? lines.join('\n') : `No ${noun}s.`}`;
+  });
+  return reply([
+    `⏱️ **Overtime** · relief is ${relief ? 'on' : 'off'}\nEach crewmate's first ${SHIFT} energy of trips in a pay period is at their usual wage, then 1.5× until payday.`,
+    ...sections,
+    `\`${prefix}crew overtime on\` gives anyone who reaches overtime the rest of the pay period off; \`${prefix}crew overtime off\` keeps them working at 1.5×.`,
+  ]);
 }
 
 // Letting someone go pays what they're owed so far.

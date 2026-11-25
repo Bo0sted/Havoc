@@ -11,7 +11,9 @@
 // Crew are paid a flat wage for every trip they work (about 40% of an
 // average catch), plus workers' comp on top by how dangerous the job is. It
 // adds up until payday, 24 hours after the first trip since the last one,
-// and is collected like a hospital bill on the next economy command.
+// and is collected like a hospital bill on the next economy command. Past a
+// SHIFT of trips in a pay period a crewmate is on overtime, unless relief is
+// on (?crew overtime on): then they sit out until payday instead.
 import { randomInt } from 'node:crypto';
 import { toolById, rankOf } from './tools.js';
 import { rollTier, pick, foundLine } from './gather.js';
@@ -24,8 +26,8 @@ import { formatWait } from './duration.js';
 export const BOSS = 5;
 const HURT = 3_600_000;
 const DAY = 86_400_000;
-// Crew trips' energy a payday covers before wages go up to OVERTIME.
-const SHIFT = 120;
+// The trips' energy each crewmate works in a pay period before their wage goes up to OVERTIME.
+export const SHIFT = 120;
 const OVERTIME = 1.5;
 
 // `comp` is workers' comp, as a % of wages. `start` is where they work
@@ -94,22 +96,27 @@ function yourOdds(odds, ready) {
   }).filter((t) => t.weight > 0);
 }
 
+// Whether a crewmate sits out for overtime: relief is on and they've worked a full shift.
+export const offShift = (relief, mate) => relief && mate.energy >= SHIFT;
+
 // Everything a trip needs to know about someone's crew in the job `from`
-// belongs to: who's able to work, the outfit tier, and the odds for the
-// crew (`odds`, perks included) and for you (`yours`).
+// belongs to: who's able to work (not hurt or sitting out), the outfit tier,
+// whether relief is on, and the odds for the crew (`odds`, perks included)
+// and for you (`yours`).
 export function partyFor(db, server, userId, from, tiers, now = Date.now()) {
   const job = jobOf(from);
   const { tier } = outfitOf(db, server, userId, job);
-  const ready = db.crew(server, userId).filter((c) => c.job === job && c.hurt_until <= now);
+  const relief = db.relief(server, userId);
+  const ready = db.crew(server, userId).filter((c) => c.job === job && c.hurt_until <= now && !offShift(relief, c));
   const odds = perked(tiers, job, tier);
-  return { from, job, tier, ready, odds, yours: yourOdds(odds, ready.length) };
+  return { from, job, tier, relief, ready, odds, yours: yourOdds(odds, ready.length) };
 }
 
 // The crew's side of a trip, after yours: one of them may get hurt, the
 // rest each roll a catch (no hospital: that was the danger roll), and
 // everyone who went is owed a wage. Returns the reply's lines.
-export function crewTrip(db, server, userId, party, { energy, stream, emoji, verb, track }, now = Date.now()) {
-  const { from, job, tier, ready, odds } = party;
+export function crewTrip(db, server, userId, party, { energy, stream, emoji, verb, track, prefix }, now = Date.now()) {
+  const { from, job, tier, relief, ready, odds } = party;
   if (!ready.length) return [];
   const total = odds.reduce((sum, t) => sum + t.weight, 0);
   const hospital = odds.find((t) => t.tier === 'hospital')?.weight ?? 0;
@@ -134,9 +141,8 @@ export function crewTrip(db, server, userId, party, { energy, stream, emoji, ver
     track.earned(stream, item.price);
   }
 
-  const before = db.payroll(server, userId)?.energy ?? 0;
-  const wage = Math.round(WAGES[from] * (before >= SHIFT ? OVERTIME : 1));
-  db.crewWorked(server, userId, ready.map((c) => c.id), wage, energy, now, hurt && { id: hurt.id, until: now + heal });
+  const pay = ready.map((c) => ({ id: c.id, wage: Math.round(WAGES[from] * (c.energy >= SHIFT ? OVERTIME : 1)) }));
+  db.crewWorked(server, userId, pay, energy, now, hurt && { id: hurt.id, until: now + heal });
 
   // Epics and legendaries get their own line; everything else is summed up.
   const big = kept.filter(({ item }) => item.tier === 'epic' || item.tier === 'legendary');
@@ -148,8 +154,24 @@ export function crewTrip(db, server, userId, party, { energy, stream, emoji, ver
   else if (!big.length) lines.push(`${crew} came back empty-handed.`);
   if (tossed) lines.push(`🎒 Your Backpack is full, so your crew threw back ${tossed} ${tossed === 1 ? 'catch' : 'catches'}.`);
   if (hurt) lines.push(`🩹 **${hurt.name}** got hurt and is out for ${formatWait(heal)}. Workers' comp has it covered.`);
-  if (before < SHIFT && before + energy >= SHIFT) lines.push('⏱️ That was a full shift: crew wages are 1.5× from now until payday.');
+  // Said once, on the trip that finishes someone's shift.
+  const done = ready.filter((c) => c.energy < SHIFT && c.energy + energy >= SHIFT);
+  if (done.length && relief) lines.push(reliefLine(db, server, userId, done, prefix));
+  else if (done.length) lines.push(`⏱️ That was a full shift for ${names(done.map((c) => c.name), Infinity)}: ${done.length === 1 ? 'their wage is' : 'their wages are'} 1.5× from now until payday.`);
   return lines;
+}
+
+// "😴 Frank is off for overtime until payday <t:…:R>." for crew relief has
+// just sat out, and which jobs that leaves with nobody.
+export function reliefLine(db, server, userId, off, prefix) {
+  const pay = db.payroll(server, userId);
+  const at = pay ? ` <t:${Math.ceil((pay.since + DAY) / 1000)}:R>` : '';
+  const crew = db.crew(server, userId);
+  const empty = Object.keys(JOBS).filter((job) => off.some((c) => c.job === job) && crew.every((c) => c.job !== job || c.energy >= SHIFT));
+  const alone = empty.length
+    ? ` That's your whole ${names(empty.map((job) => JOBS[job].label.toLowerCase()))} crew${empty.length > 1 ? 's' : ''}, so you're on your own until then. See \`${prefix}crew overtime\`.`
+    : '';
+  return `😴 ${names(off.map((c) => c.name), Infinity)} ${off.length === 1 ? 'is' : 'are'} off for overtime until payday${at}.${alone}`;
 }
 
 // "Dave, Mike and Steve", or "Dave, Mike, Steve, Tom, Bill and 3 more".

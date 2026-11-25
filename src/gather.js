@@ -138,7 +138,7 @@ export function gatherCommand({ name, description, kind, from, stream, verb, act
         }
         lines = found.map((item) => foundLine(emoji, user.name, verb, item));
       }
-      lines.push(...crewTrip(db, server.key, user.id, party, { energy, stream, emoji, verb, track }));
+      lines.push(...crewTrip(db, server.key, user.id, party, { energy, stream, emoji, verb, track, prefix }));
       return reply(charmed + lines.join('\n'));
     },
   };

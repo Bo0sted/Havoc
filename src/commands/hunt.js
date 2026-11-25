@@ -130,7 +130,7 @@ export default {
       }
       lines = found.map((item) => foundLine('🔫', user.name, 'bagged', item));
     }
-    lines.push(...crewTrip(db, server.key, user.id, party, { energy: mode.energy, stream: 'hunting', emoji: '🔫', verb: 'bagged', track }));
+    lines.push(...crewTrip(db, server.key, user.id, party, { energy: mode.energy, stream: 'hunting', emoji: '🔫', verb: 'bagged', track, prefix }));
     return reply(charmed + lines.join('\n'));
   },
 };
