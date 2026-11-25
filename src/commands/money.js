@@ -42,7 +42,7 @@ export default {
       ...(crew.length ? [`Balance after Payroll: ${afterPayroll(worth, crew)}`] : []),
       energyLine(energyOf(db, server.key, who.id)),
       `Privileges: ${licenses.length ? licenses.join(' · ') : 'None'}`,
-      `Profile Settings: Gifts ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'}`,
+      `Profile Settings: Gifts ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'} · Auto-sell Legendaries ${db.sellSettings(server.key, who.id).has('legendary') ? 'On' : 'Off'}`,
     ];
 
     // Tools in shop order (poles, pickaxes, guns); the safe is listed under

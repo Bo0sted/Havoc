@@ -86,6 +86,10 @@ const SCHEMA = `
     server TEXT NOT NULL, user_id INTEGER NOT NULL,
     PRIMARY KEY (server, user_id)
   );
+  CREATE TABLE IF NOT EXISTS sell_settings (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, setting TEXT NOT NULL,
+    PRIMARY KEY (server, user_id, setting)
+  );
   CREATE TABLE IF NOT EXISTS pocket (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     server TEXT NOT NULL, user_id INTEGER NOT NULL, charm TEXT NOT NULL, charges INTEGER NOT NULL
@@ -153,7 +157,8 @@ const COLUMNS = [
 // one belongs here too, and nothing else does.
 const PROFILE = [
   'cents', 'items', 'holdBet', 'settleBet', 'betStats', 'tool', 'tools', 'useTool', 'breakTool', 'buyTool', 'buyGun',
-  'ammo', 'buyAmmo', 'useAmmo', 'licenses', 'giftsOff', 'setGiftsOff', 'buyLicense', 'countCommand', 'commandCount',
+  'ammo', 'buyAmmo', 'useAmmo', 'licenses', 'giftsOff', 'setGiftsOff', 'sellSettings', 'setSellSetting', 'buyLicense',
+  'countCommand', 'commandCount',
   'earnings', 'earn', 'lose', 'promoClaimed', 'claimPromoTool', 'claimPromoCash', 'addCents', 'takeUpTo', 'daily',
   'claimDaily', 'lotteryStreak', 'lotteryWin', 'lotteryLoss', 'addItem', 'energy', 'setEnergy', 'surge', 'pocket',
   'addCharm', 'jailedUntil', 'jail', 'wheelSpins', 'setWheelSpins', 'buyWheelSpin', 'takeItem', 'buyBoost', 'sell',
@@ -260,6 +265,9 @@ export function openDb(path) {
     giftsOff: q('SELECT 1 FROM gifts_off WHERE server = ? AND user_id = ?'),
     turnGiftsOff: q('INSERT OR IGNORE INTO gifts_off (server, user_id) VALUES (?, ?)'),
     turnGiftsOn: q('DELETE FROM gifts_off WHERE server = ? AND user_id = ?'),
+    sellSettings: q('SELECT setting FROM sell_settings WHERE server = ? AND user_id = ?'),
+    sellSettingOn: q('INSERT OR IGNORE INTO sell_settings (server, user_id, setting) VALUES (?, ?, ?)'),
+    sellSettingOff: q('DELETE FROM sell_settings WHERE server = ? AND user_id = ? AND setting = ?'),
     migrated: q('SELECT 1 FROM migrations WHERE name = ?'),
     migrate: q('INSERT INTO migrations (name) VALUES (?)'),
     everyWallet: q('SELECT server, user_id, cents FROM wallets'),
@@ -435,6 +443,11 @@ export function openDb(path) {
     // True when it changed (false if it was already that way).
     setGiftsOff: (server, userId, off) =>
       (off ? s.turnGiftsOff.run(server, userId) : s.turnGiftsOn.run(server, userId)).changes > 0,
+    // The ?sell settings someone turned on, as a Set of ids (everything else is off).
+    sellSettings: (server, userId) => new Set(s.sellSettings.all(server, userId).map((r) => r.setting)),
+    // True when it changed (false if it was already that way).
+    setSellSetting: (server, userId, setting, on) =>
+      (on ? s.sellSettingOn : s.sellSettingOff).run(server, userId, setting).changes > 0,
     // Pays for a license. False, and nothing changes, if they can't afford it.
     buyLicense: (server, userId, license, cost) => atomic(() => {
       if (cost > 0 && s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
