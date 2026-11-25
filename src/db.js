@@ -132,12 +132,34 @@ const SCHEMA = `
     server TEXT NOT NULL, user_id INTEGER NOT NULL, since INTEGER NOT NULL, energy INTEGER NOT NULL,
     PRIMARY KEY (server, user_id)
   );
+  CREATE TABLE IF NOT EXISTS links (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, to_server TEXT NOT NULL, to_user INTEGER NOT NULL,
+    PRIMARY KEY (server, user_id)
+  );
 `;
 
 // Columns added to a table after it first shipped: [table, column, definition].
 const COLUMNS = [
   ['energy', 'surge_until', 'INTEGER NOT NULL DEFAULT 0'],
 ];
+
+// Everything that acts on one person's economy profile, as (server, userId,
+// ...): these follow ?link to the linked profile. A new one belongs here too.
+const PROFILE = [
+  'cents', 'items', 'holdBet', 'settleBet', 'betStats', 'tool', 'tools', 'useTool', 'breakTool', 'buyTool', 'buyGun',
+  'ammo', 'buyAmmo', 'useAmmo', 'licenses', 'giftsOff', 'setGiftsOff', 'buyLicense', 'countCommand', 'commandCount',
+  'earnings', 'earn', 'lose', 'promoClaimed', 'claimPromoTool', 'claimPromoCash', 'addCents', 'takeUpTo', 'daily',
+  'claimDaily', 'lotteryStreak', 'lotteryWin', 'lotteryLoss', 'addItem', 'energy', 'setEnergy', 'surge', 'pocket',
+  'addCharm', 'jailedUntil', 'jail', 'wheelSpins', 'setWheelSpins', 'buyWheelSpin', 'takeItem', 'buyBoost', 'sell',
+  'move', 'payBill', 'crew', 'hire', 'crewWorked', 'payroll', 'settlePayroll',
+];
+
+// A profile table's rows for everyone on server ?1, as (user_id, ...cols):
+// someone with a ?link has the linked profile's rows, under their own id.
+const counted = (table, cols) => `(SELECT user_id, ${cols} FROM ${table}
+  WHERE server = ?1 AND user_id NOT IN (SELECT user_id FROM links WHERE server = ?1)
+  UNION ALL SELECT l.user_id, ${cols.map((c) => `t.${c}`)} FROM links l
+  JOIN ${table} t ON t.server = l.to_server AND t.user_id = l.to_user WHERE l.server = ?1)`;
 
 // The Backpack is the `items` table (it was the Safety Deposit Box, so
 // everything people already had is in their Backpack); a safe is `safe_items`.
@@ -168,12 +190,12 @@ export function openDb(path) {
     botChannels: q('SELECT channel_id FROM bot_channels WHERE server = ? ORDER BY rowid'),
     addBotChannel: q('INSERT OR IGNORE INTO bot_channels (server, channel_id) VALUES (?, ?)'),
     removeBotChannel: q('DELETE FROM bot_channels WHERE server = ? AND channel_id = ?'),
-    totalCents: q('SELECT COALESCE(SUM(cents), 0) AS cents FROM wallets WHERE server = ?'),
-    totalItems: q(`SELECT item, SUM(qty) AS qty FROM (SELECT item, qty FROM items WHERE server = ?1
-      UNION ALL SELECT item, qty FROM safe_items WHERE server = ?1) WHERE qty > 0 GROUP BY item`),
-    wallets: q('SELECT user_id, cents FROM wallets WHERE server = ?'),
-    allItems: q(`SELECT user_id, item, qty FROM items WHERE server = ?1 AND qty > 0
-      UNION ALL SELECT user_id, item, qty FROM safe_items WHERE server = ?1 AND qty > 0`),
+    totalCents: q(`SELECT COALESCE(SUM(cents), 0) AS cents FROM ${counted('wallets', ['cents'])}`),
+    totalItems: q(`SELECT item, SUM(qty) AS qty FROM (SELECT item, qty FROM ${counted('items', ['item', 'qty'])}
+      UNION ALL SELECT item, qty FROM ${counted('safe_items', ['item', 'qty'])}) WHERE qty > 0 GROUP BY item`),
+    wallets: q(`SELECT user_id, cents FROM ${counted('wallets', ['cents'])}`),
+    allItems: q(`SELECT user_id, item, qty FROM ${counted('items', ['item', 'qty'])} WHERE qty > 0
+      UNION ALL SELECT user_id, item, qty FROM ${counted('safe_items', ['item', 'qty'])} WHERE qty > 0`),
     daily: q('SELECT last, streak FROM dailies WHERE server = ? AND user_id = ?'),
     setDaily: q('INSERT INTO dailies (server, user_id, last, streak) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET last = excluded.last, streak = excluded.streak'),
     lotteryStreak: q('SELECT streak FROM lottery_streaks WHERE server = ? AND user_id = ?'),
@@ -260,6 +282,11 @@ export function openDb(path) {
     addPayroll: q('INSERT INTO payroll (server, user_id, since, energy) VALUES (?, ?, ?, ?) ON CONFLICT DO UPDATE SET energy = energy + excluded.energy'),
     paidCrew: q('UPDATE crew SET owed = 0, trips = 0 WHERE server = ? AND user_id = ?'),
     dropPayroll: q('DELETE FROM payroll WHERE server = ? AND user_id = ?'),
+    link: q('SELECT * FROM links WHERE server = ? AND user_id = ?'),
+    linkOf: q('SELECT * FROM links WHERE (server = ?1 AND user_id = ?2) OR (to_server = ?1 AND to_user = ?2)'),
+    links: q('SELECT * FROM links ORDER BY rowid'),
+    setLink: q('INSERT INTO links (server, user_id, to_server, to_user) VALUES (?, ?, ?, ?)'),
+    unlink: q('DELETE FROM links WHERE server = ? AND user_id = ?'),
   };
 
   // Runs fn inside one transaction: everything in it lands, or nothing does
@@ -276,6 +303,13 @@ export function openDb(path) {
     }
   }
 
+  // The profile someone's rows are under: the one linked in place of theirs
+  // (?link), or their own.
+  function profileOf(server, userId) {
+    const link = s.link.get(server, userId);
+    return link ? [link.to_server, link.to_user] : [server, userId];
+  }
+
   // Bets still held when Havoc last stopped never finished: hand them back.
   atomic(() => {
     for (const bet of s.pendingBets.all()) {
@@ -284,7 +318,7 @@ export function openDb(path) {
     }
   });
 
-  return {
+  const api = {
     overrides: (server) => new Map(s.overrides.all(server).map((r) => [r.command, r.ms])),
     setOverride: (server, command, ms) => s.setOverride.run(server, command, ms),
     // True when there was an override to remove.
@@ -516,17 +550,20 @@ export function openDb(path) {
     // from one Backpack to the other, recorded in 'gifts' as `value` cents
     // given and received. False (and nothing changes) when the giver
     // doesn't have all of it.
+    // Either side may be linked to a profile on another server.
     give: (server, from, to, { cents = 0, lots = [] }, value) => atomic(() => {
+      const giver = profileOf(server, from);
+      const taker = profileOf(server, to);
       if (cents > 0) {
-        if (s.takeCents.run(cents, server, from, cents).changes === 0) return false;
-        s.addCents.run(server, to, cents);
+        if (s.takeCents.run(cents, ...giver, cents).changes === 0) return false;
+        s.addCents.run(...taker, cents);
       }
       for (const { item, qty } of lots) {
-        if (s.backpack.take.run(qty, server, from, item, qty).changes === 0) return false;
-        s.backpack.add.run(server, to, item, qty);
+        if (s.backpack.take.run(qty, ...giver, item, qty).changes === 0) return false;
+        s.backpack.add.run(...taker, item, qty);
       }
-      s.lose.run(server, from, 'gifts', value);
-      s.earn.run(server, to, 'gifts', value);
+      s.lose.run(...giver, 'gifts', value);
+      s.earn.run(...taker, 'gifts', value);
       return true;
     }),
     // A hospital bill of up to `bill` cents: cash first, then Backpack items,
@@ -633,8 +670,24 @@ export function openDb(path) {
       s.dropPayroll.run(server, userId);
     }),
 
+    // ?link: someone's profile on one server used in place of theirs on
+    // another, as { server, user_id, to_server, to_user }. Their own rows
+    // stay as they are, and come back when the link is removed. A profile is
+    // in one link at most, on either side; linkOf finds it.
+    linkOf: (server, userId) => s.linkOf.get(server, userId) ?? null,
+    links: () => s.links.all(),
+    link: (server, userId, toServer, toUser) => s.setLink.run(server, userId, toServer, toUser),
+    // True when there was a link to remove.
+    unlink: (server, userId) => s.unlink.run(server, userId).changes > 0,
+    profileOf,
+
     close: () => db.close(),
   };
+  for (const name of PROFILE) {
+    const run = api[name];
+    api[name] = (server, userId, ...rest) => run(...profileOf(server, userId), ...rest);
+  }
+  return api;
 }
 
 // The same statements for the Backpack and the safe, as s.backpack / s.safe.

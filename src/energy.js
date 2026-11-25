@@ -27,7 +27,8 @@ export const SURGE = 12 * 3_600_000;
 // started), `next` (ms until it, 0 when full), `boostIn` (ms until another
 // recovery item is allowed, 0 when it is) and `surgeUntil` (0 when none).
 export function energyOf(db, server, userId, now = Date.now()) {
-  const { max: base, every } = settingsFor(db, server);
+  // A linked profile (?link) keeps its own server's settings.
+  const { max: base, every } = settingsFor(db, db.profileOf(server, userId)[0]);
   const row = db.energy(server, userId);
   if (!row) return { points: base, max: base, base, every, since: now, next: 0, boostIn: 0, surgeUntil: 0 };
   const surgeUntil = row.surge_until > now ? row.surge_until : 0;

@@ -11,13 +11,14 @@ any number of servers at once and answers messages that start with a prefix
 | `?fish` / `?mine` | go fishing or mining; catches (trash included) go in your Backpack, with a small risk of a hospital bill | 5sec |
 | `?hunt small` / `?hunt big` | go hunting with a Hunting License, a gun and ammo; the biggest risk of a hospital bill | 5sec |
 | `?crew` | hire, fire and rename crew who catch alongside you and share your hospital risk; paid once a day | 5sec |
-| `?money` / `?stats [@user]` | money, energy, licenses, tools, Backpack and safe, yours or someone else's | 5sec |
+| `?money` / `?stats [@user]` | money, energy, licenses, crew, tools, Backpack and safe, yours or someone else's | 5sec |
 | `?safe` | move things between your Backpack and your safe, or sell from the safe | 5sec |
 | `?give <user> <amount>` / `?give <user> <item> [amount\|all]` (also `?zelle`) | give someone cash, or items from your Backpack; they get a ping | 5sec |
 | `?blowup [@user]` | "explodes" a picture: the first attached image, else the named user's, else yours | 15sec |
 | `?id [@user]` | a Haven user id | 1hr |
 | `?cooldown` | **admin**: list cooldowns, `?cooldown <command> <X><sec\|min\|hr>` to override one on this server, `?cooldown reset <command>` to remove it | none |
 | `?remote [server]` | **admin**: run your commands as if on another server (replies still come here); alone, turns it off | none |
+| `?link <server>:<id> <server>:<id>` | **admin**: the first profile uses the second one's money, stuff and progress everywhere, `?gdp` and `?top` included (its own is kept for when the link goes; a profile can be in one link); `?link list`, `?link remove <server>:<id>` | none |
 
 How it behaves:
 - Answers only in server channels (never DMs), in forum topics and threads
@@ -59,7 +60,7 @@ needing a server.
 | `src/config.js` | reads and validates `SERVERS` |
 | `src/haven.js` | Haven client: login, messages, member lookups, sending |
 | `src/router.js` | admin check, `?remote`, guest check, cooldowns, payday, error handling |
-| `src/db.js` | SQLite storage |
+| `src/db.js` | SQLite storage, and following `?link` to the linked profile |
 | `src/cooldowns.js`, `src/duration.js` | cooldown checks and `30sec`/`5min`/`1hr` text |
 | `src/items.js` | everything that can be in a Backpack or safe, with sell prices |
 | `src/storage.js` | Backpack and safe space, choosing items by name, amount or tier |

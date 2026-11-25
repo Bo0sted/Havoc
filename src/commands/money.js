@@ -1,4 +1,5 @@
-import { findTarget } from '../members.js';
+import { findTarget, linkLine } from '../members.js';
+import { formatMoney } from '../items.js';
 import { KINDS, toolById, licenseById, wear, breakable } from '../tools.js';
 import { energyOf, waitFor } from '../energy.js';
 import { placeOf, safeOf, contents, worthOf } from '../storage.js';
@@ -6,6 +7,7 @@ import { gained, lost, RARITY_KEY } from '../colors.js';
 import { pocketContents } from '../charms.js';
 import { STREAMS, TRACKING_START } from '../earnings.js';
 import { nextAfter } from '../milestones.js';
+import { JOBS, outfitOf, owed } from '../crew.js';
 
 export default {
   name: 'money',
@@ -16,7 +18,7 @@ export default {
   cooldown: 5_000,
   economy: true,
   jailFree: true, // looking at your stats still works in ?wheel jail
-  async run({ prefix, args, user, server, db, findMember, reply, notHere }) {
+  async run({ prefix, args, user, server, servers, db, findMember, reply, notHere }) {
     const extra = args[0]?.toLowerCase() === 'extra';
     if (extra) args = args.slice(1);
     let who = user;
@@ -26,25 +28,31 @@ export default {
       who = member;
     }
     if (!who) return notHere();
-    const header = who === user ? '' : `🏦 **${who.name}**\n`;
+    const link = db.linkOf(server.key, who.id);
+    const header = (who === user ? '' : `🏦 **${who.name}**\n`) + (link ? `🔗 Syncing profile data ${await linkLine(servers, link)}\n` : '');
     if (extra) return reply(header + earnings(db, server, who));
 
+    const worth = worthOf(db, server.key, who.id);
+    const crew = db.crew(server.key, who.id);
     const licenses = db.licenses(server.key, who.id).map((id) => licenseById.get(id)?.name).filter(Boolean);
     const overview = [
       '**Overview**',
       `💵 ${gained(db.cents(server.key, who.id))}`,
-      `Net Worth: ${gained(worthOf(db, server.key, who.id))}`,
+      `Net Worth: ${gained(worth)}`,
+      ...(crew.length ? [`Balance after Payroll: ${afterPayroll(worth, crew)}`] : []),
       energyLine(energyOf(db, server.key, who.id)),
       `Privileges: ${licenses.length ? licenses.join(' · ') : 'None'}`,
       `Profile Settings: Gifts ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'}`,
     ];
 
-    // Tools in shop order (poles, pickaxes, guns, crew outfits); the safe is listed under Assets.
+    // Tools in shop order (poles, pickaxes, guns); the safe is listed under
+    // Assets and crew outfits under Company.
     const kinds = Object.keys(KINDS);
+    const outfits = Object.values(JOBS).map((j) => j.kind);
     const rounds = db.ammo(server.key, who.id);
     const tools = db.tools(server.key, who.id)
       .map((t) => ({ ...t, tool: toolById.get(t.item) }))
-      .filter((t) => t.tool && t.kind !== 'safe')
+      .filter((t) => t.tool && t.kind !== 'safe' && !outfits.includes(t.kind))
       .sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind))
       .map(({ kind, uses, tool }) => {
         const note = breakable(tool) ? wear(kind, uses) : tool.ammo ? `${rounds.get(tool.ammo) ?? 0} rounds left` : '';
@@ -61,9 +69,34 @@ export default {
     const pocket = db.pocket(server.key, who.id);
     assets.push(`🍀 Pocket (${pocket.length}): ${pocketContents(pocket)}`);
 
-    return reply(`${header}${overview.join('\n')}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}\n\n${tips(prefix)}`);
+    return reply(`${header}${overview.join('\n')}${company(db, server.key, who.id, crew)}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}\n\n${tips(prefix)}`);
   },
 };
+
+// Net worth less the wages and workers' comp owed so far. Payday takes cash,
+// then Backpack and safe items, so all of it can go to payroll.
+function afterPayroll(worth, crew) {
+  const { wages, comp } = owed(crew);
+  const left = worth - wages - comp;
+  return left > 0 ? gained(left) : left < 0 ? lost(left) : formatMoney(0);
+}
+
+// Someone's crew by job, then each crew outfit with its price and how many
+// of its places are filled. Empty with neither.
+function company(db, server, userId, crew) {
+  const lines = [];
+  for (const [job, { label, emoji }] of Object.entries(JOBS)) {
+    const hired = crew.filter((c) => c.job === job);
+    if (hired.length) lines.push(`${emoji} ${label}: ${hired.map((c) => c.name).join(', ')}`);
+  }
+  for (const job of Object.keys(JOBS)) {
+    const { outfit, room } = outfitOf(db, server, userId, job);
+    if (!outfit) continue;
+    const filled = crew.filter((c) => c.job === job).length;
+    lines.push(`${KINDS[outfit.kind].emoji} ${outfit.name} (${formatMoney(outfit.price)}): ${filled}/${room === Infinity ? '∞' : room} crew`);
+  }
+  return lines.length ? `\n\n**Company**\n${lines.join('\n')}` : '';
+}
 
 // Pointers to the commands people miss, at the bottom (owner's wording).
 const tips = (p) => [
