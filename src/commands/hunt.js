@@ -7,6 +7,18 @@ import { drawCharm, kickedIn } from '../charms.js';
 import { hospitalize, billLine } from '../hospital.js';
 import { placeOf } from '../storage.js';
 import { partyFor, crewTrip } from '../crew.js';
+import { formatMoney } from '../items.js';
+import { gained, lost } from '../colors.js';
+
+// ?hunt settings: auto/off choices saved on the hunter's profile, all off
+// by default. `auto` / `off` say what each means for hunting.
+const SETTINGS = {
+  ammo: {
+    description: 'Would you like to automatically purchase more ammo when you run out? The bot will ensure you have enough before making the purchase',
+    auto: () => 'when you run out of ammo, the bot buys another box for your gun if you can afford it',
+    off: (p) => `when you run out of ammo, you buy more yourself in \`${p}shop\``,
+  },
+};
 
 // The riskiest jobs, and the best paid: a Hunting License, a gun and 1
 // round per hunt (hunting guides bring their own). Small game (any gun, 2
@@ -76,14 +88,17 @@ const NO_GUN = [
 export default {
   name: 'hunt',
   category: 'economy',
-  usage: ['small', 'big'],
-  description: 'go hunting (needs a Hunting License, a gun and ammo from the shop): small game takes any gun and 2 energy, big game a shotgun or better and 3 energy, with the biggest risk of the hospital',
+  usage: ['small', 'big', 'settings'],
+  description: 'go hunting (needs a Hunting License, a gun and ammo from the shop): small game takes any gun and 2 energy, big game a shotgun or better and 3 energy, with the biggest risk of the hospital; `settings` can buy ammo for you when you run out',
   // Per mode, for ?energy.
   energies: { small: MODES.small.energy, big: MODES.big.energy },
   cooldown: 5_000,
   economy: true,
   cooldownText: (wait) => `🔫 You're still reloading. Try again in ${wait}.`,
   async run({ prefix, args, user, server, db, track, reply, notHere }) {
+    if (['settings', 'setting'].includes(args[0]?.toLowerCase())) {
+      return user ? reply(settings(prefix, args.slice(1), db, server, user)) : notHere();
+    }
     const mode = MODES[matchAnswer(args.join(' '), Object.keys(MODES))];
     if (!mode) return reply(`Usage: \`${prefix}hunt small\` (any gun, 2 energy) or \`${prefix}hunt big\` (a shotgun or better, 3 energy)`);
     if (!user) return notHere();
@@ -97,7 +112,7 @@ export default {
     }
     if (mode === MODES.big && !gun.big) return reply(`🔫 Your ${gun.name} is too small for big game. That takes a shotgun or better: check \`${prefix}shop\`.`);
     const ammo = ammoById.get(gun.ammo);
-    if (!db.ammo(server.key, user.id).get(ammo.id)) return reply(`🔫 You're out of ammo. Buy more ${ammo.name} in \`${prefix}shop\`.`);
+    if (!db.ammo(server.key, user.id).get(ammo.id)) return outOfAmmo(gun, ammo, { prefix, user, server, db, track, reply });
     const full = backpackFull(prefix, db, server.key, user.id);
     if (full) return reply(full);
 
@@ -134,3 +149,42 @@ export default {
     return reply(charmed + lines.join('\n'));
   },
 };
+
+// Out of ammo. With ?hunt settings ammo auto, a box for the gun follows in
+// its own message, bought at full price (never with a Coupon) and only when
+// it's affordable; without, the message ends with a tip about the setting.
+async function outOfAmmo(gun, ammo, { prefix, user, server, db, track, reply }) {
+  const out = `🔫 You're out of ammo. Buy more ${ammo.name} in \`${prefix}shop\`.`;
+  if (!db.huntSettings(server.key, user.id).has('ammo')) {
+    return reply(`${out}\nPro tip: \`${prefix}hunt settings ammo auto\` can allow the bot to automatically purchase and refill your ammo on your behalf.`);
+  }
+  await reply(out);
+  const balance = db.cents(server.key, user.id);
+  if (!db.buyAmmo(server.key, user.id, ammo.id, ammo.rounds, ammo.price)) {
+    return reply(`📦 I couldn't automatically purchase more ammo for your ${gun.name}: it costs ${formatMoney(ammo.price)} and you only have ${formatMoney(balance)}.`);
+  }
+  track.lost('shop', ammo.price);
+  return reply(`📦 I have automatically purchased more ammo for your ${gun.name} costing ${lost(ammo.price)}. You now have ${gained(db.cents(server.key, user.id))} left.`);
+}
+
+// `?hunt settings` lists them, `?hunt settings <name>` shows one,
+// `?hunt settings <name> auto|off` changes it (`on` works for auto).
+function settings(prefix, [name, value, ...extra], db, server, user) {
+  const mine = db.huntSettings(server.key, user.id);
+  const list = Object.entries(SETTINGS).map(([id, s]) =>
+    `\`${prefix}hunt settings ${id} auto|off\` (now ${mine.has(id) ? 'auto' : 'off'}) · ${s.description}`);
+  const menu = `⚙️ **Hunt settings**\n${list.join('\n')}`;
+  if (!name) return menu;
+  const id = matchAnswer(name, Object.keys(SETTINGS));
+  if (!id) return `There's no hunt setting called **${name}**.\n\n${menu}`;
+
+  const setting = SETTINGS[id];
+  const now = mine.has(id) ? 'auto' : 'off';
+  const other = now === 'auto' ? 'off' : 'auto';
+  if (!value) return `It's ${now}: ${setting[now](prefix)}. Change it with \`${prefix}hunt settings ${id} ${other}\`.`;
+  const want = !extra.length && matchAnswer(value, ['auto', 'off'], { on: 'auto' });
+  if (!want) return `Usage: \`${prefix}hunt settings ${id} auto|off\``;
+  return db.setHuntSetting(server.key, user.id, id, want === 'auto')
+    ? `✅ Saved: ${setting[want](prefix)}.`
+    : `Already ${want}: ${setting[want](prefix)}.`;
+}

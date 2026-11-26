@@ -43,7 +43,7 @@ export default {
       `Net Worth: ${gained(worth)}`,
       energyLine(energyOf(db, server.key, who.id)),
       `Privileges: ${licenses.length ? licenses.join(' · ') : 'None'}`,
-      `Profile Settings: Gifts ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'} · Auto-sell Legendaries ${db.sellSettings(server.key, who.id).has('legendary') ? 'On' : 'Off'}`,
+      `Profile Settings: Gifts ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'} · Auto-sell Legendaries ${db.sellSettings(server.key, who.id).has('legendary') ? 'On' : 'Off'} · Auto-buy Ammo ${db.huntSettings(server.key, who.id).has('ammo') ? 'On' : 'Off'}`,
     ];
 
     // Tools in shop order (poles, pickaxes, guns); the safe is listed under

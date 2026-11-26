@@ -90,6 +90,10 @@ const SCHEMA = `
     server TEXT NOT NULL, user_id INTEGER NOT NULL, setting TEXT NOT NULL,
     PRIMARY KEY (server, user_id, setting)
   );
+  CREATE TABLE IF NOT EXISTS hunt_settings (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, setting TEXT NOT NULL,
+    PRIMARY KEY (server, user_id, setting)
+  );
   CREATE TABLE IF NOT EXISTS pocket (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     server TEXT NOT NULL, user_id INTEGER NOT NULL, charm TEXT NOT NULL, charges INTEGER NOT NULL
@@ -171,7 +175,7 @@ const PROFILE = [
   'claimDaily', 'lotteryStreak', 'lotteryWin', 'lotteryLoss', 'addItem', 'energy', 'setEnergy', 'surge', 'pocket',
   'addCharm', 'jailedUntil', 'jail', 'wheelSpins', 'setWheelSpins', 'buyWheelSpin', 'takeItem', 'buyBoost', 'sell',
   'move', 'payBill', 'crew', 'hire', 'crewWorked', 'payroll', 'settlePayroll', 'relief', 'setRelief',
-  'trophies', 'claimEvent',
+  'trophies', 'claimEvent', 'huntSettings', 'setHuntSetting',
 ];
 
 // A profile table's rows for everyone on server ?1, as (user_id, ...cols):
@@ -280,6 +284,9 @@ export function openDb(path) {
     sellSettings: q('SELECT setting FROM sell_settings WHERE server = ? AND user_id = ?'),
     sellSettingOn: q('INSERT OR IGNORE INTO sell_settings (server, user_id, setting) VALUES (?, ?, ?)'),
     sellSettingOff: q('DELETE FROM sell_settings WHERE server = ? AND user_id = ? AND setting = ?'),
+    huntSettings: q('SELECT setting FROM hunt_settings WHERE server = ? AND user_id = ?'),
+    huntSettingOn: q('INSERT OR IGNORE INTO hunt_settings (server, user_id, setting) VALUES (?, ?, ?)'),
+    huntSettingOff: q('DELETE FROM hunt_settings WHERE server = ? AND user_id = ? AND setting = ?'),
     migrated: q('SELECT 1 FROM migrations WHERE name = ?'),
     migrate: q('INSERT INTO migrations (name) VALUES (?)'),
     everyWallet: q('SELECT server, user_id, cents FROM wallets'),
@@ -463,6 +470,10 @@ export function openDb(path) {
     // True when it changed (false if it was already that way).
     setSellSetting: (server, userId, setting, on) =>
       (on ? s.sellSettingOn : s.sellSettingOff).run(server, userId, setting).changes > 0,
+    // The same for ?hunt settings.
+    huntSettings: (server, userId) => new Set(s.huntSettings.all(server, userId).map((r) => r.setting)),
+    setHuntSetting: (server, userId, setting, on) =>
+      (on ? s.huntSettingOn : s.huntSettingOff).run(server, userId, setting).changes > 0,
     // Pays for a license. False, and nothing changes, if they can't afford it.
     buyLicense: (server, userId, license, cost) => atomic(() => {
       if (cost > 0 && s.takeCents.run(cost, server, userId, cost).changes === 0) return false;
