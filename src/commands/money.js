@@ -3,7 +3,7 @@ import { formatMoney } from '../items.js';
 import { KINDS, toolById, licenseById, wear, breakable } from '../tools.js';
 import { energyOf, waitFor } from '../energy.js';
 import { placeOf, safeOf, contents, worthOf } from '../storage.js';
-import { gained, lost, RARITY_KEY } from '../colors.js';
+import { gained, lost, green, yellow, red, RARITY_KEY } from '../colors.js';
 import { pocketContents } from '../charms.js';
 import { STREAMS, TRACKING_START } from '../earnings.js';
 import { nextAfter } from '../milestones.js';
@@ -105,15 +105,21 @@ const tips = (p) => [
   `\`${p}stats extra\` more fun numbers`,
 ].join('\n');
 
-// "⚡ Energy: 9/60 (Fully recovered at 3:42 PM)", as a Haven timestamp so
-// everyone reads it in their own time zone; just "60/60" when full. During
-// an Energy Surge it also says when that ends.
+// "⚡ Energy: ■□□□□□□□□□ 9/60 (Fully recovered at 3:42 PM)", as a Haven
+// timestamp so everyone reads it in their own time zone; just the bar and
+// "60/60" when full. During an Energy Surge it also says when that ends.
+// The bar is 10 squares whatever the max, never rounded up so it only looks
+// full when it is: red under a quarter, yellow under half, green otherwise.
 function energyLine(bar) {
+  const share = bar.points / bar.max;
+  const filled = Math.min(10, Math.floor(share * 10));
+  const paint = share < 0.25 ? red : share < 0.5 ? yellow : green;
+  const meter = `${paint('■'.repeat(filled) + '□'.repeat(10 - filled))} ${bar.points}/${bar.max}`;
   const surge = bar.surgeUntil ? ` · Energy Surge until <t:${Math.ceil(bar.surgeUntil / 1000)}:t>` : '';
-  if (bar.points >= bar.max) return `⚡ Energy: ${bar.points}/${bar.max}${surge}`;
+  if (bar.points >= bar.max) return `⚡ Energy: ${meter}${surge}`;
   const ms = waitFor(bar, bar.max);
   const at = Math.ceil((Date.now() + ms) / 1000);
-  return `⚡ Energy: ${bar.points}/${bar.max} (Fully recovered at <t:${at}:${ms < 86_400_000 ? 't' : 'f'}>)${surge}`;
+  return `⚡ Energy: ${meter} (Fully recovered at <t:${at}:${ms < 86_400_000 ? 't' : 'f'}>)${surge}`;
 }
 
 // ?stats extra: what someone had before tracking started, then what was
