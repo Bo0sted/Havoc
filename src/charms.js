@@ -23,7 +23,8 @@ export const SEVERITIES = {
 
 // on: gather (fish, mine, hunt), hunt, break (a pole or pickaxe about to
 // break), tool (a pole or pickaxe), bet, sell or buy (a ?shop purchase).
-// `ownSlice` charms are only won on their own wheel slice, never a charm slice.
+// `ownSlice` charms are only won on their own wheel slice, never a charm slice
+// (event gifts have no slice, so they're never won at all).
 // A Coupon's `cap` is the most it takes off a purchase.
 export const CHARMS = [
   { id: 'second_wind', type: 'lucky', severity: 'mild', emoji: '🔋', name: 'Second Wind', on: 'gather',
@@ -50,6 +51,8 @@ export const CHARMS = [
     text: 'Your next fish, mine or big-game hunt is guaranteed legendary.' },
   { id: 'golden_coupon', type: 'lucky', severity: 'insane', emoji: '🎫', name: 'Golden Coupon', on: 'buy', ownSlice: true, cap: 3_000_000,
     text: 'Your next shop purchase is free, up to $30,000 (anything pricier gets $30,000 off). It works on whatever you buy next, but with a Coupon too, the smaller one is used if it covers the price.' },
+  { id: 'thanksgiving_coupon', type: 'lucky', severity: 'strong', emoji: '🦃', name: 'Thanksgiving Coupon', on: 'buy', ownSlice: true, cap: 2_000_000,
+    text: 'Your next shop purchase is free, up to $20,000 (anything pricier gets $20,000 off). A gift from Thanksgiving 2026, never won on ?wheel.' },
 
   { id: 'black_cat', type: 'misfortune', severity: 'mild', emoji: '🐈‍⬛', name: 'Black Cat', on: 'gather',
     text: 'Your next fish, mine or hunt catches nothing.' },

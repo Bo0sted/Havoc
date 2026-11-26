@@ -148,6 +148,10 @@ const SCHEMA = `
     server TEXT NOT NULL, key TEXT NOT NULL, url TEXT NOT NULL,
     PRIMARY KEY (server, key)
   );
+  CREATE TABLE IF NOT EXISTS trophies (
+    server TEXT NOT NULL, user_id INTEGER NOT NULL, trophy TEXT NOT NULL, qty INTEGER NOT NULL,
+    PRIMARY KEY (server, user_id, trophy)
+  );
 `;
 
 // Columns added to a table after it first shipped: [table, column, definition].
@@ -167,6 +171,7 @@ const PROFILE = [
   'claimDaily', 'lotteryStreak', 'lotteryWin', 'lotteryLoss', 'addItem', 'energy', 'setEnergy', 'surge', 'pocket',
   'addCharm', 'jailedUntil', 'jail', 'wheelSpins', 'setWheelSpins', 'buyWheelSpin', 'takeItem', 'buyBoost', 'sell',
   'move', 'payBill', 'crew', 'hire', 'crewWorked', 'payroll', 'settlePayroll', 'relief', 'setRelief',
+  'trophies', 'claimEvent',
 ];
 
 // A profile table's rows for everyone on server ?1, as (user_id, ...cols):
@@ -247,6 +252,8 @@ export function openDb(path) {
     addCharm: q('INSERT INTO pocket (server, user_id, charm, charges) VALUES (?, ?, ?, ?)'),
     spendCharge: q('UPDATE pocket SET charges = charges - 1 WHERE id = ?'),
     dropSpentCharms: q('DELETE FROM pocket WHERE id = ? AND charges <= 0'),
+    trophies: q('SELECT trophy, qty FROM trophies WHERE server = ? AND user_id = ?'),
+    addTrophy: q('INSERT INTO trophies (server, user_id, trophy, qty) VALUES (?, ?, ?, 1) ON CONFLICT DO UPDATE SET qty = qty + 1'),
     jailedUntil: q('SELECT until FROM jail WHERE server = ? AND user_id = ?'),
     jail: q('INSERT INTO jail (server, user_id, until) VALUES (?, ?, ?) ON CONFLICT DO UPDATE SET until = excluded.until'),
     purgeJail: q('DELETE FROM jail WHERE until <= ?'),
@@ -514,6 +521,16 @@ export function openDb(path) {
       s.addCents.run(server, userId, cents);
       return true;
     }),
+    // An event's gift (events.js) is claimed once like a promo: its cash
+    // (earned as promos), a charm and a trophy. False if already claimed.
+    claimEvent: (server, userId, event, cents, charm, charges, trophy) => atomic(() => {
+      if (s.claimPromo.run(server, userId, event).changes === 0) return false;
+      s.addCents.run(server, userId, cents);
+      s.earn.run(server, userId, 'promos', cents);
+      s.addCharm.run(server, userId, charm, charges);
+      s.addTrophy.run(server, userId, trophy);
+      return true;
+    }),
     addCents: (server, userId, cents) => s.addCents.run(server, userId, cents),
     // Takes up to `cents`, never below $0 (nobody goes into debt). Returns
     // how much was actually taken.
@@ -550,6 +567,8 @@ export function openDb(path) {
     // charge, and it's gone with its last.
     pocket: (server, userId) => s.pocket.all(server, userId),
     addCharm: (server, userId, charm, charges) => s.addCharm.run(server, userId, charm, charges),
+    // Someone's trophies ([{ trophy, qty }]).
+    trophies: (server, userId) => s.trophies.all(server, userId),
     useCharm: (id) => atomic(() => {
       s.spendCharge.run(id);
       s.dropSpentCharms.run(id);

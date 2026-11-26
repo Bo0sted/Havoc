@@ -5,6 +5,7 @@ import { energyOf, waitFor } from '../energy.js';
 import { placeOf, safeOf, contents, worthOf } from '../storage.js';
 import { gained, lost, green, yellow, red, RARITY_KEY } from '../colors.js';
 import { pocketContents } from '../charms.js';
+import { trophyCase } from '../trophies.js';
 import { STREAMS, TRACKING_START } from '../earnings.js';
 import { nextAfter } from '../milestones.js';
 import { JOBS, outfitOf, owed } from '../crew.js';
@@ -68,8 +69,9 @@ export default {
     }
     const pocket = db.pocket(server.key, who.id);
     assets.push(`🍀 Pocket (${pocket.length}): ${pocketContents(pocket)}`);
+    const trophies = trophyCase(db.trophies(server.key, who.id));
 
-    return reply(`${header}${overview.join('\n')}${company(db, server.key, who.id, crew)}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}\n\n${tips(prefix)}`);
+    return reply(`${header}${overview.join('\n')}${company(db, server.key, who.id, crew)}\n\n**Tools**\n${tools.length ? tools.join(' · ') : 'None'}\n\n${assets.join('\n')}\n\n**Trophies**\n${trophies || 'None'}\n\n${tips(prefix)}`);
   },
 };
 
