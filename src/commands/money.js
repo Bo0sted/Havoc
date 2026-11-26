@@ -38,8 +38,8 @@ export default {
     const overview = [
       '**Overview**',
       `💵 ${gained(db.cents(server.key, who.id))}`,
-      `Net Worth: ${gained(worth)}`,
       ...(crew.length ? [`Balance after Payroll: ${afterPayroll(db.cents(server.key, who.id), crew)}`] : []),
+      `Net Worth: ${gained(worth)}`,
       energyLine(energyOf(db, server.key, who.id)),
       `Privileges: ${licenses.length ? licenses.join(' · ') : 'None'}`,
       `Profile Settings: Gifts ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'} · Auto-sell Legendaries ${db.sellSettings(server.key, who.id).has('legendary') ? 'On' : 'Off'}`,
