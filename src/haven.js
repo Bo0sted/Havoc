@@ -524,17 +524,23 @@ export class HavenClient extends EventEmitter {
     await this.post(channelCode, { content: await this.upload(buffer, filename, mime), isImage: true }, opts);
   }
 
-  // Posts an image that's the same every time (`key` names it): uploaded
-  // here once and its link saved, then the same file is posted again, so
-  // repeats cost no uploads or disk. The file is checked first and uploaded
-  // afresh if it's gone (a cleanup removed it). `buffer()` makes it when it's needed.
-  async sendImageOnce(channelCode, key, buffer, filename, mime, opts) {
+  // The /uploads/ path of an image that's the same every time (`key` names
+  // it): uploaded here once and its link saved, then the same file is used
+  // again, so repeats cost no uploads or disk. The file is checked first and
+  // uploaded afresh if it's gone (a cleanup removed it). `buffer()` makes it
+  // when it's needed.
+  async uploadOnce(key, buffer, filename, mime) {
     let url = this.uploads.get(key);
     if (!url || !(await this.stillUploaded(url))) {
       url = await this.upload(await buffer(), filename, mime);
       this.uploads.set(key, url);
     }
-    await this.post(channelCode, { content: url, isImage: true }, opts);
+    return url;
+  }
+
+  // Posts an image that's the same every time (see uploadOnce).
+  async sendImageOnce(channelCode, key, buffer, filename, mime, opts) {
+    await this.post(channelCode, { content: await this.uploadOnce(key, buffer, filename, mime), isImage: true }, opts);
   }
 
   // Whether an /uploads/ path still serves its file (false if it doesn't answer).

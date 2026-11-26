@@ -170,6 +170,13 @@ function output(home, { channelCode, message, threadId }, remoteName, prefix) {
       noted = false;
       await home.client.sendImageOnce(channelCode, key, buffer, filename, mime, where);
     },
+    // Text with an image that's the same every time under it, in one
+    // message: Haven draws an /uploads/ link on a line of its own as the picture.
+    replyWithImageOnce: async (content, key, buffer, filename, mime) => {
+      noted = true;
+      const url = await home.client.uploadOnce(key, buffer, filename, mime);
+      home.client.send(channelCode, `${note}${content}\n${url}`, where);
+    },
     // A message that notifies `member` ({ id, name }): its own message where
     // the command was typed, not silent and not a reply (a reply would
     // notify the person who typed the command too). `build` gets the @mention.
