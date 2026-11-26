@@ -1,6 +1,6 @@
 // Hospital bills for ?fish, ?mine and ?hunt: a share of what someone is
-// worth (cash plus everything in their Backpack and safe, as ?top counts
-// it), taken in brackets like income tax so crossing one never makes the
+// worth (cash, everything in their Backpack and safe, and property, as ?top
+// counts it), taken in brackets like income tax so crossing one never makes the
 // bill jump. Gentle up to $100k, then steeper, so rich people hunting alone
 // feel it (crew take that risk off them; see crew.js). Never more than they have.
 import { randomInt } from 'node:crypto';

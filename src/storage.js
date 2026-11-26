@@ -2,7 +2,7 @@
 // has, and turning "<item> [amount|all]", "<category>" or "all" into the
 // stacks it means. Retired items take no space and can't be chosen.
 import { ITEMS, itemById, valueOf } from './items.js';
-import { toolById } from './tools.js';
+import { toolById, propertyValue } from './tools.js';
 import { rarity } from './colors.js';
 
 export const BACKPACK_SPACE = 100;
@@ -15,11 +15,15 @@ export function safeOf(db, server, userId) {
   return toolById.get(db.tool(server, userId, 'safe')?.item) ?? null;
 }
 
-// Net worth: cash plus everything in the Backpack and safe at its sell
-// price (what ?top ranks by, and what hospital bills are a share of).
+// What someone's crew outfits are worth (see propertyValue).
+const propertyOf = (db, server, userId) =>
+  db.tools(server, userId).reduce((sum, t) => sum + propertyValue(t.item), 0);
+
+// Net worth: cash, everything in the Backpack and safe at its sell price,
+// and property (what ?top ranks by, and what hospital bills are a share of).
 export function worthOf(db, server, userId) {
   const rows = [...db.items(server, userId), ...db.items(server, userId, 'safe')];
-  return db.cents(server, userId) + rows.reduce((sum, r) => sum + valueOf(r.item, r.qty), 0);
+  return db.cents(server, userId) + rows.reduce((sum, r) => sum + valueOf(r.item, r.qty), 0) + propertyOf(db, server, userId);
 }
 
 // Items that count toward the space a place has.

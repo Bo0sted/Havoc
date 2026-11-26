@@ -202,6 +202,7 @@ export function openDb(path) {
     wallets: q(`SELECT user_id, cents FROM ${rows('wallets', ['cents'])}`),
     allItems: q(`SELECT user_id, item, qty FROM ${rows('items', ['item', 'qty'])} WHERE qty > 0
       UNION ALL SELECT user_id, item, qty FROM ${rows('safe_items', ['item', 'qty'])} WHERE qty > 0`),
+    allTools: q(`SELECT user_id, item FROM ${rows('tools', ['item'])}`),
   });
 
   const s = {
@@ -521,9 +522,10 @@ export function openDb(path) {
       if (taken > 0) s.takeCents.run(taken, server, userId, taken);
       return taken;
     }),
-    // Every wallet and every held item on one server, for rankings.
+    // Every wallet, held item and tool on one server, for rankings.
     wallets: (server) => s.wallets.all(server),
     allItems: (server) => s.allItems.all(server),
+    allTools: (server) => s.allTools.all(server),
     // The last daily claim ({ last, streak }), or null if never claimed.
     daily: (server, userId) => s.daily.get(server, userId) ?? null,
     claimDaily: (server, userId, at, streak, cents) => atomic(() => {
@@ -746,6 +748,7 @@ export function openDb(path) {
     totalItems: (server) => sums.totalItems.all(server),
     wallets: (server) => sums.wallets.all(server),
     allItems: (server) => sums.allItems.all(server),
+    allTools: (server) => sums.allTools.all(server),
   };
   for (const name of PROFILE) linked[name] = (server, userId, ...rest) => api[name](...profileOf(server, userId), ...rest);
   return { ...api, linked };

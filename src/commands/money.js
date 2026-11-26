@@ -39,7 +39,7 @@ export default {
       '**Overview**',
       `💵 ${gained(db.cents(server.key, who.id))}`,
       `Net Worth: ${gained(worth)}`,
-      ...(crew.length ? [`Balance after Payroll: ${afterPayroll(worth, crew)}`] : []),
+      ...(crew.length ? [`Balance after Payroll: ${afterPayroll(db.cents(server.key, who.id), crew)}`] : []),
       energyLine(energyOf(db, server.key, who.id)),
       `Privileges: ${licenses.length ? licenses.join(' · ') : 'None'}`,
       `Profile Settings: Gifts ${db.giftsOff(server.key, who.id) ? 'Off' : 'On'} · Auto-sell Legendaries ${db.sellSettings(server.key, who.id).has('legendary') ? 'On' : 'Off'}`,
@@ -73,11 +73,11 @@ export default {
   },
 };
 
-// Net worth less the wages and workers' comp owed so far. Payday takes cash,
-// then Backpack and safe items, so all of it can go to payroll.
-function afterPayroll(worth, crew) {
+// Cash less the wages and workers' comp owed so far. Payday takes Backpack
+// and safe items too when cash runs short, but this only counts the bank.
+function afterPayroll(cash, crew) {
   const { wages, comp } = owed(crew);
-  const left = worth - wages - comp;
+  const left = cash - wages - comp;
   return left > 0 ? gained(left) : left < 0 ? lost(left) : formatMoney(0);
 }
 

@@ -1,4 +1,5 @@
 import { valueOf, formatMoney } from '../items.js';
+import { propertyValue } from '../tools.js';
 
 const SHOWN = 10;
 const MEDALS = ['🥇', '🥈', '🥉'];
@@ -7,7 +8,7 @@ export default {
   name: 'top',
   aliases: ['leaderboard'],
   category: 'economy',
-  description: 'the richest people here: money plus everything in their Backpacks and safes',
+  description: 'the richest people here: money, everything in their Backpacks and safes, and property',
   cooldown: 30_000,
   economy: true,
   async run({ user, server, servers, db, reply }) {
@@ -15,6 +16,7 @@ export default {
     const add = (id, cents) => worth.set(id, (worth.get(id) ?? 0) + cents);
     for (const { user_id, cents } of db.wallets(server.key)) add(user_id, cents);
     for (const { user_id, item, qty } of db.allItems(server.key)) add(user_id, valueOf(item, qty));
+    for (const { user_id, item } of db.allTools(server.key)) add(user_id, propertyValue(item));
     // Someone with a ?link (db.js counts the linked profile) goes by its name too.
     const linkedNames = new Map();
     for (const l of db.links().filter((l) => l.server === server.key)) {

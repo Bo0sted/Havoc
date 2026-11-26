@@ -90,6 +90,13 @@ export const licenseById = new Map(LICENSES.map((l) => [l.id, l]));
 
 export const toolById = new Map(TOOLS.map((t) => [t.id, t]));
 
+// Crew outfits (a boat, mine site or hunting land) are property: they can't
+// be sold, but count at their shop price in net worth, ?top and ?gdp.
+export function propertyValue(id) {
+  const tool = toolById.get(id);
+  return tool?.crew ? tool.price : 0;
+}
+
 // "1 cast used", "6 swings used".
 export const wear = (kind, uses) => `${uses} ${uses === 1 ? KINDS[kind].unit.slice(0, -1) : KINDS[kind].unit} used`;
 
