@@ -19,12 +19,15 @@ export function safeOf(db, server, userId) {
 const propertyOf = (db, server, userId) =>
   db.tools(server, userId).reduce((sum, t) => sum + propertyValue(t.item), 0);
 
-// Net worth: cash, everything in the Backpack and safe at its sell price,
-// and property (what ?top ranks by, and what hospital bills are a share of).
-export function worthOf(db, server, userId) {
+// Cash plus everything in the Backpack and safe at its sell price: all a
+// bill can take, so what hospital bills are a share of.
+export function liquidOf(db, server, userId) {
   const rows = [...db.items(server, userId), ...db.items(server, userId, 'safe')];
-  return db.cents(server, userId) + rows.reduce((sum, r) => sum + valueOf(r.item, r.qty), 0) + propertyOf(db, server, userId);
+  return db.cents(server, userId) + rows.reduce((sum, r) => sum + valueOf(r.item, r.qty), 0);
 }
+
+// Net worth: that plus property (what ?top ranks by).
+export const worthOf = (db, server, userId) => liquidOf(db, server, userId) + propertyOf(db, server, userId);
 
 // Items that count toward the space a place has.
 export const used = (rows) => rows.reduce((n, r) => n + (itemById.get(r.item)?.retired ? 0 : r.qty), 0);

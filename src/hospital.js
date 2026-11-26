@@ -1,11 +1,11 @@
 // Hospital bills for ?fish, ?mine and ?hunt: a share of what someone is
-// worth (cash, everything in their Backpack and safe, and property, as ?top
-// counts it), taken in brackets like income tax so crossing one never makes the
+// worth (cash plus everything in their Backpack and safe; property doesn't
+// count, since a bill can't take it), taken in brackets like income tax so crossing one never makes the
 // bill jump. Gentle up to $100k, then steeper, so rich people hunting alone
 // feel it (crew take that risk off them; see crew.js). Never more than they have.
 import { randomInt } from 'node:crypto';
 import { itemById, formatMoney } from './items.js';
-import { worthOf, label } from './storage.js';
+import { liquidOf, label } from './storage.js';
 import { gained, lost } from './colors.js';
 
 // [up to, lowest rate, highest rate + 1] per bracket, rates in hundredths of
@@ -41,7 +41,7 @@ export function hospitalBill(worth, scale = 1, brackets = BRACKETS) {
 // items; anything left over is forgiven. Returns { bill, cash, taken,
 // change, forgiven } (see db.payBill).
 export function hospitalize(db, server, userId, scale = 1, brackets = BRACKETS) {
-  const bill = hospitalBill(worthOf(db, server, userId), scale, brackets);
+  const bill = hospitalBill(liquidOf(db, server, userId), scale, brackets);
   return { bill, ...db.payBill(server, userId, bill, takeable) };
 }
 
